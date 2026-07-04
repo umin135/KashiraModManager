@@ -94,6 +94,7 @@ public static class PatchEngine
             uint modsHash = PickModsHash(c.Rdx, c.Index);
             string modsName = RdxFile.FdataName(modsHash);
             var builder = new ModsFdataBuilder();
+            var newEntries = new List<(uint Ktid, byte[] Blob)>();
             int redirected = 0, added = 0;
 
             foreach (var (r, isNew, typeKtid) in items)
@@ -107,7 +108,8 @@ public static class PatchEngine
                         continue;
                     }
                     var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, c.Rdx, template));
-                    c.Rdb.AppendClone(template, r.FileKtid, newId, placed.Offset, placed.BlockSize, placed.RawSize);
+                    newEntries.Add((r.FileKtid,
+                        c.Rdb.BuildClonedEntry(template, r.FileKtid, newId, placed.Offset, placed.BlockSize, placed.RawSize)));
                     added++;
                 }
                 else
@@ -119,6 +121,9 @@ public static class PatchEngine
                 }
                 matched.Add(r.FileKtid);
             }
+
+            // 리다이렉트 완료 후 신규 엔트리를 정렬 위치에 삽입 (재구성)
+            c.Rdb.InsertEntriesSorted(newEntries);
 
             var rdx2 = c.Rdx.WithEntry(newId, modsHash);
             File.WriteAllBytes(Path.Combine(ws.PackageDir, modsName), builder.ToBytes());
