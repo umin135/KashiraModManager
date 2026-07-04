@@ -168,5 +168,12 @@ public sealed class RdbFile
         e.FdataId = fdataId; e.FdataOffset = offset; e.SizeInCont = sizeInCont; e.FileSize = fileSize;
     }
 
+    /// <summary>엔트리의 CompressionType(flags bit 20-25)을 None 으로 — 무압축 저장 블록과 맞춘다.</summary>
+    public void SetUncompressed(RdbEntry e)
+    {
+        uint flags = e.Flags & ~(0x3Fu << 20);
+        BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(e.Pos + 0x2C), flags);
+    }
+
     public void Save(string path) => File.WriteAllBytes(path, Data);
 }

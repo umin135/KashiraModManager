@@ -44,7 +44,9 @@ public static class ZlibExt
             byte[] stream;
             using (var chunkMs = new MemoryStream())
             {
-                using (var zs = new ZLibStream(chunkMs, CompressionLevel.SmallestSize, leaveOpen: true))
+                // 원본 DOA6 블록은 zlib 레벨6(헤더 78 9c). 레벨9(78 da)는 엔진 inflate 가
+                // 복잡한 실데이터에서 크래시 → 원본과 동일 레벨로 압축.
+                using (var zs = new ZLibStream(chunkMs, CompressionLevel.Optimal, leaveOpen: true))
                     zs.Write(data.Slice(i, len));
                 stream = chunkMs.ToArray();
             }

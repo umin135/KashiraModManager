@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using Kashira.Core.Formats;
 using Kashira.Core.Games;
@@ -107,16 +108,18 @@ public static class PatchEngine
                         notes.Add($"{c.Db}: 0x{r.FileKtid:x8}: no template entry for type 0x{typeKtid:x8} — skipped");
                         continue;
                     }
-                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, c.Rdx, template));
-                    newEntries.Add((r.FileKtid,
-                        c.Rdb.BuildClonedEntry(template, r.FileKtid, newId, placed.Offset, placed.BlockSize, placed.RawSize)));
+                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplatePrefix(ws.PackageDir, c.Rdx, template), compress: false);
+                    var blob = c.Rdb.BuildClonedEntry(template, r.FileKtid, newId, placed.Offset, placed.BlockSize, placed.RawSize);
+                    ClearBlobCompression(blob); // 무압축 저장에 맞춰 새 엔트리 압축플래그 해제
+                    newEntries.Add((r.FileKtid, blob));
                     added++;
                 }
                 else
                 {
                     var e = c.Rdb.Find(r.FileKtid)!;
-                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, c.Rdx, e));
+                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplatePrefix(ws.PackageDir, c.Rdx, e), compress: false);
                     c.Rdb.Redirect(e, newId, placed.Offset, placed.BlockSize, placed.RawSize);
+                    c.Rdb.SetUncompressed(e); // 무압축 저장에 맞춰 엔트리 압축플래그 해제
                     redirected++;
                 }
                 matched.Add(r.FileKtid);
@@ -206,6 +209,13 @@ public static class PatchEngine
 
     private static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data));
 
+    /// <summary>클론된 엔트리 blob 의 CompressionType(flags bit 20-25)을 None 으로.</summary>
+    private static void ClearBlobCompression(byte[] blob)
+    {
+        uint flags = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(0x2C)) & ~(0x3Fu << 20);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(0x2C), flags);
+    }
+
     private static bool IsModsHash(uint fileHash) => (fileHash >> 16) == 0xCA5E;
 
     private static bool RdxHasModsHash(string rdxPath)
@@ -218,7 +228,11 @@ public static class PatchEngine
         catch { return false; }
     }
 
-    private static byte[] ReadTemplateHeader(string packageDir, RdxFile rdx, RdbEntry e)
+    /// <summary>
+    /// 원본 블록의 payload 앞 전체 prefix(헤더 + 타입별 param 영역, = total−comp 바이트)를 읽는다.
+    /// g1m 처럼 헤더 뒤 param 영역이 있는 타입을 위해 0x58 헤더만이 아니라 payload 시작까지 보존.
+    /// </summary>
+    private static byte[] ReadTemplatePrefix(string packageDir, RdxFile rdx, RdbEntry e)
     {
         try
         {
@@ -226,8 +240,17 @@ public static class PatchEngine
             var path = Path.Combine(packageDir, RdxFile.FdataName(hash));
             using var fs = File.OpenRead(path);
             fs.Seek(e.FdataOffset, SeekOrigin.Begin);
-            var buf = new byte[IdrkBlock.HeaderSize];
-            return fs.Read(buf, 0, buf.Length) == buf.Length ? buf : Array.Empty<byte>();
+
+            var head = new byte[IdrkBlock.HeaderSize];
+            if (fs.Read(head, 0, head.Length) != head.Length) return Array.Empty<byte>();
+            long total = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(0x08));
+            long comp = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(0x10));
+            int prefixLen = (int)(total - comp);
+            if (prefixLen < 0x20 || prefixLen > 0x10000) return head; // 이상치 → 헤더만
+
+            var prefix = new byte[prefixLen];
+            fs.Seek(e.FdataOffset, SeekOrigin.Begin);
+            return fs.Read(prefix, 0, prefixLen) == prefixLen ? prefix : head;
         }
         catch { return Array.Empty<byte>(); }
     }

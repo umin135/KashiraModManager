@@ -16,13 +16,13 @@ public sealed class ModsFdataBuilder
     public List<Placed> Blocks { get; } = new();
 
     /// <summary>에셋 원본 바이트 → IDRK 블록 생성 후 16바이트 정렬 위치에 추가. 배치 오프셋 반환.</summary>
-    public Placed Add(uint ktid, byte[] raw, ReadOnlySpan<byte> templateHeader = default)
+    public Placed Add(uint ktid, byte[] raw, ReadOnlySpan<byte> templateHeader = default, bool compress = true)
     {
         int pad = (int)((Alignment - (_ms.Length % Alignment)) % Alignment);
         if (pad > 0) _ms.Write(new byte[pad]);
 
         int offset = (int)_ms.Length;
-        var block = IdrkBlock.Build(raw, templateHeader);
+        var block = IdrkBlock.Build(raw, templateHeader, compress);
         _ms.Write(block);
         var placed = new Placed(ktid, offset, block.Length, raw.Length);
         Blocks.Add(placed);
