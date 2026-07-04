@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Kashira.Gui.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="480"
+        x:Class="Kashira.Gui.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="720" Height="480" MinWidth="560" MinHeight="380"
+        Background="{StaticResource KashiraBg}"
+        Icon="/Assets/kashira.ico"
+        Title="Kashira">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <ContentControl Content="{Binding CurrentPage}"/>
+</Window>

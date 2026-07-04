@@ -1,0 +1,40 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Kashira.Gui.App"
+             xmlns:local="using:Kashira.Gui"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <!-- Kashira 테마 팔레트 -->
+        <SolidColorBrush x:Key="KashiraBg" Color="#3d3d4c"/>
+        <SolidColorBrush x:Key="KashiraPanel" Color="#34343f"/>
+        <SolidColorBrush x:Key="KashiraPanelHi" Color="#45455670"/>
+        <SolidColorBrush x:Key="KashiraAccent" Color="#c0392b"/>
+        <SolidColorBrush x:Key="KashiraAccentHover" Color="#d24636"/>
+        <SolidColorBrush x:Key="KashiraText" Color="#e8e8ee"/>
+        <SolidColorBrush x:Key="KashiraTextDim" Color="#a0a0ad"/>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{StaticResource KashiraPanel}"/>
+            <Setter Property="Foreground" Value="{StaticResource KashiraText}"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="{StaticResource KashiraAccent}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource KashiraAccentHover}"/>
+        </Style>
+    </Application.Styles>
+</Application>

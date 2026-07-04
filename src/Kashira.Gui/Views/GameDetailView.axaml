@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kashira.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="480"
+             x:Class="Kashira.Gui.Views.GameDetailView"
+             x:DataType="vm:GameDetailViewModel">
+
+    <DockPanel Margin="18">
+
+        <!-- Header -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+            <Button Grid.Column="0" Content="← Back" Command="{Binding BackCommand}"
+                    VerticalAlignment="Top" Margin="0,2,14,0"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="{Binding GameName}" Foreground="{StaticResource KashiraAccent}"
+                           FontSize="22" FontWeight="Bold"/>
+                <TextBlock Text="{Binding InstallPath}" Foreground="{StaticResource KashiraTextDim}"
+                           FontSize="11" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Tab toggle -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,8">
+            <Button Grid.Column="0" Content="DebugMods" Command="{Binding ShowDebugCommand}"
+                    Classes.accent="{Binding IsDebugTab}" Margin="0,0,6,0"/>
+            <Button Grid.Column="1" Content="Mods" Command="{Binding ShowModsCommand}"
+                    Classes.accent="{Binding IsModsTab}"/>
+            <Button Grid.Column="3" Content="Refresh" Command="{Binding RefreshCommand}"/>
+        </Grid>
+
+        <!-- Action bar -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
+            <Button Grid.Column="0" Content="Open folder" Command="{Binding OpenFolderCommand}"/>
+            <Button Grid.Column="2" Content="Revert" Command="{Binding RevertCommand}" Margin="8,0,0,0"/>
+            <Button Grid.Column="3" Classes="accent" Content="Apply" Command="{Binding ApplyCommand}" Margin="8,0,0,0"/>
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
+                   Foreground="{StaticResource KashiraTextDim}" FontSize="12" Margin="4,10,4,0"
+                   TextWrapping="Wrap"/>
+
+        <!-- Content: switches with the tab -->
+        <Border Background="{StaticResource KashiraPanel}" CornerRadius="6" Padding="4">
+            <Panel>
+
+                <!-- DebugMods (inject files) -->
+                <Panel IsVisible="{Binding IsDebugTab}">
+                    <ListBox ItemsSource="{Binding DebugMods}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DebugModItemViewModel">
+                                <Grid ColumnDefinitions="*,Auto" Margin="4,6">
+                                    <StackPanel Grid.Column="0" Spacing="1">
+                                        <TextBlock Text="{Binding FileName}" Foreground="{StaticResource KashiraText}"
+                                                   FontSize="13" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding KtidHex}" Foreground="{StaticResource KashiraTextDim}"
+                                                   FontSize="11"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" VerticalAlignment="Center"
+                                               Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="Drop 0x{ktid}.ext files into the DebugMods folder, then Apply."
+                               IsVisible="{Binding DebugModsEmpty}"
+                               Foreground="{StaticResource KashiraTextDim}" FontSize="12"
+                               TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>
+                </Panel>
+
+                <!-- Mods (.ktmod packages) -->
+                <Panel IsVisible="{Binding IsModsTab}">
+                    <ListBox ItemsSource="{Binding Mods}" Background="Transparent"/>
+                    <TextBlock Text="Packaged .ktmod support is not implemented yet."
+                               IsVisible="{Binding ModsEmpty}"
+                               Foreground="{StaticResource KashiraTextDim}" FontSize="12"
+                               TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>
+                </Panel>
+
+            </Panel>
+        </Border>
+    </DockPanel>
+</UserControl>

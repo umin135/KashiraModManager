@@ -1,0 +1,22 @@
+# ---- .NET build output ----
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+*.user
+*.suo
+
+# ---- IDE / editor ----
+.vs/
+.idea/
+.vscode/
+
+# ---- Python (tools/verify reference impl) ----
+__pycache__/
+*.pyc
+
+# ---- Generated recon/verify dumps ----
+/tools/verify/root_rdb_entries.csv
+
+# ---- Local research docs & agent notes (kept out of repo) ----
+/_docs
+CLAUDE.md
