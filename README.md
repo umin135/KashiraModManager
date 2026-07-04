@@ -1,5 +1,5 @@
 # Kashira Mod Manager
-
+![screenshot_20171221-151714](https://raw.githubusercontent.com/umin135/KashiraModManager/refs/heads/main/readme_res/title.png)
 ## Introduction
 Kashira Mod Manager is a universal mod manager for patching mods into games built on Koei Tecmo's **Katana Engine**.
 
