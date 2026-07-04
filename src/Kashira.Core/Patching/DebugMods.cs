@@ -8,8 +8,8 @@ namespace Kashira.Core.Patching;
 /// </summary>
 public static class DebugMods
 {
-    /// <summary>주입할 파일 1개.</summary>
-    public sealed record Entry(uint FileKtid, string FileName, string FullPath, long Size);
+    /// <summary>주입할 파일 1개. Ext 는 확장자(점 제외, 소문자) — 신규 등록 시 타입 결정용.</summary>
+    public sealed record Entry(uint FileKtid, string FileName, string FullPath, long Size, string Ext);
 
     public static List<Entry> List(string debugModsDir)
     {
@@ -20,7 +20,10 @@ public static class DebugMods
         {
             var name = Path.GetFileNameWithoutExtension(path);
             if (TryParseKtid(name, out var ktid))
-                list.Add(new Entry(ktid, Path.GetFileName(path), path, new FileInfo(path).Length));
+            {
+                var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+                list.Add(new Entry(ktid, Path.GetFileName(path), path, new FileInfo(path).Length, ext));
+            }
         }
         return list.OrderBy(e => e.FileName, StringComparer.OrdinalIgnoreCase).ToList();
     }

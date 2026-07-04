@@ -94,7 +94,7 @@ public partial class GameDetailViewModel : ViewModelBase
         if (files.Count == 0) { Status = "No DebugMods files to inject. Drop 0x{ktid}.ext files there first."; return; }
 
         Status = "Applying…";
-        var reps = files.Select(e => new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath))).ToList();
+        var reps = files.Select(e => new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath), e.Ext)).ToList();
         var report = await Task.Run(() => PatchEngine.Apply(_ws, reps));
 
         Refresh(); // 상태 재계산(디스크 기준)

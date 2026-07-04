@@ -5,18 +5,21 @@ using Kashira.Core.Games;
 namespace Kashira.Core.Patching;
 
 /// <summary>
-/// 전략 B(RDB 리다이렉트) 패치 엔진. 원본 불변 — 항상 pristine 원본에서 재계산.
-/// 복수 DB(root/system) 인지: 각 file_ktid 가 속한 DB 만 패치.
-/// Apply 시 _Kashira/rdbpatch.json 에 지문을 기록 → 게임 업데이트로 rdb 가 덮이면 감지.
+/// 패치 엔진. 원본 불변 — 항상 pristine 원본에서 재계산.
+/// 각 에셋: RDB 에 있으면 리다이렉트(전략 B), 없으면 같은 타입 엔트리를 복제해 신규 등록(전략 D).
+/// 복수 DB(root/system) 인지. Apply 시 _Kashira/rdbpatch.json 에 지문 기록 → 업데이트로 rdb 덮이면 감지.
 /// </summary>
 public static class PatchEngine
 {
     private const uint ModsHashBase = 0xCA5E0001;
     private const string ModsGlob = "0xca5e*.fdata";
 
-    public sealed record Replacement(uint FileKtid, byte[] AssetBytes);
+    /// <summary>Ext 는 신규 등록 시 타입 결정용(파일 확장자). 기존 에셋 교체엔 불필요.</summary>
+    public sealed record Replacement(uint FileKtid, byte[] AssetBytes, string? Ext = null);
 
     public sealed record Report(int Requested, int Applied, IReadOnlyList<uint> NotFound, IReadOnlyList<string> Notes);
+
+    private sealed record DbCtx(int Index, string Db, string LiveRdb, string LiveRdx, RdbFile Rdb, RdxFile Rdx);
 
     public static Report Apply(GameWorkspace ws, IReadOnlyList<Replacement> replacements)
     {
@@ -25,9 +28,10 @@ public static class PatchEngine
         var matched = new HashSet<uint>();
         var record = new PatchRecord { PatchedAtUtc = DateTime.UtcNow.ToString("o") };
 
-        // 이전 mods.fdata 정리 (깨끗한 재계산)
         foreach (var f in SafeGlob(ws.PackageDir, ModsGlob)) TryDelete(f);
 
+        // Phase 1 — pristine rdb/rdx 로드 (rebaseline 포함)
+        var loaded = new List<DbCtx>();
         int dbIndex = 0;
         foreach (var db in ws.Databases)
         {
@@ -37,9 +41,6 @@ public static class PatchEngine
             string bakRdx = Path.Combine(ws.BackupDir, db + ".rdx");
             if (!File.Exists(liveRdb) || !File.Exists(liveRdx)) { dbIndex++; continue; }
 
-            // pristine 기준 확보:
-            //  - 라이브가 우리 패치 상태면 → 기존 백업이 pristine (없으면 복구 불가 → 스킵)
-            //  - 라이브가 순정이면(최초 or 게임 업데이트로 덮임) → 이걸 새 원본으로 재기준
             if (RdxHasModsHash(liveRdx))
             {
                 if (!File.Exists(bakRdb) || !File.Exists(bakRdx))
@@ -55,49 +56,86 @@ public static class PatchEngine
                 File.Copy(liveRdx, bakRdx, overwrite: true);
             }
 
-            var rdb = RdbFile.Parse(File.ReadAllBytes(bakRdb)); // pristine
-            var rdx = RdxFile.Parse(File.ReadAllBytes(bakRdx));
+            loaded.Add(new DbCtx(dbIndex, db, liveRdb, liveRdx,
+                RdbFile.Parse(File.ReadAllBytes(bakRdb)),
+                RdxFile.Parse(File.ReadAllBytes(bakRdx))));
+            dbIndex++;
+        }
 
-            var here = replacements.Where(r => rdb.Find(r.FileKtid) is not null).ToList();
-            if (here.Count == 0)
+        // Phase 2 — replacement 을 DB에 배정 (redirect vs 신규)
+        var work = loaded.ToDictionary(c => c.Db, _ => new List<(Replacement r, bool isNew, uint typeKtid)>());
+        foreach (var r in replacements)
+        {
+            var host = loaded.FirstOrDefault(c => c.Rdb.Find(r.FileKtid) is not null);
+            if (host is not null) { work[host.Db].Add((r, false, 0)); continue; }
+
+            if (!AssetTypes.TryGetTypeKtid(r.Ext, out var typeKtid))
             {
-                File.Copy(bakRdb, liveRdb, overwrite: true); // 이 DB 는 순정 그대로
-                File.Copy(bakRdx, liveRdx, overwrite: true);
-                dbIndex++;
+                notes.Add($"0x{r.FileKtid:x8}: new asset but unknown extension '{r.Ext}' — skipped");
+                continue;
+            }
+            var target = PickTargetDb(loaded, typeKtid);
+            if (target is null) { notes.Add($"0x{r.FileKtid:x8}: no target database — skipped"); continue; }
+            work[target.Db].Add((r, true, typeKtid));
+        }
+
+        // Phase 3 — DB별 처리
+        foreach (var c in loaded)
+        {
+            var items = work[c.Db];
+            if (items.Count == 0)
+            {
+                File.Copy(Path.Combine(ws.BackupDir, c.Db + ".rdb"), c.LiveRdb, true);
+                File.Copy(Path.Combine(ws.BackupDir, c.Db + ".rdx"), c.LiveRdx, true);
                 continue;
             }
 
-            int newId = rdx.NextFreeId;
-            uint modsHash = PickModsHash(rdx, dbIndex);
+            int newId = c.Rdx.NextFreeId;
+            uint modsHash = PickModsHash(c.Rdx, c.Index);
             string modsName = RdxFile.FdataName(modsHash);
-
             var builder = new ModsFdataBuilder();
-            foreach (var r in here)
+            int redirected = 0, added = 0;
+
+            foreach (var (r, isNew, typeKtid) in items)
             {
-                var e = rdb.Find(r.FileKtid)!;
-                builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, rdx, e));
+                if (isNew)
+                {
+                    var template = c.Rdb.FindByType(typeKtid);
+                    if (template is null)
+                    {
+                        notes.Add($"{c.Db}: 0x{r.FileKtid:x8}: no template entry for type 0x{typeKtid:x8} — skipped");
+                        continue;
+                    }
+                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, c.Rdx, template));
+                    c.Rdb.AppendClone(template, r.FileKtid, newId, placed.Offset, placed.BlockSize, placed.RawSize);
+                    added++;
+                }
+                else
+                {
+                    var e = c.Rdb.Find(r.FileKtid)!;
+                    var placed = builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, c.Rdx, e));
+                    c.Rdb.Redirect(e, newId, placed.Offset, placed.BlockSize, placed.RawSize);
+                    redirected++;
+                }
                 matched.Add(r.FileKtid);
             }
-            foreach (var b in builder.Blocks)
-                rdb.Redirect(rdb.Find(b.Ktid)!, newId, b.Offset, b.BlockSize, b.RawSize);
-            var rdx2 = rdx.WithEntry(newId, modsHash);
 
+            var rdx2 = c.Rdx.WithEntry(newId, modsHash);
             File.WriteAllBytes(Path.Combine(ws.PackageDir, modsName), builder.ToBytes());
-            File.WriteAllBytes(liveRdb, rdb.Data);
-            File.WriteAllBytes(liveRdx, rdx2.Data);
+            File.WriteAllBytes(c.LiveRdb, c.Rdb.Data);
+            File.WriteAllBytes(c.LiveRdx, rdx2.Data);
 
             record.Databases.Add(new DbPatchInfo
             {
-                Db = db,
+                Db = c.Db,
                 ModsFdata = modsName,
-                Replacements = here.Select(h => $"0x{h.FileKtid:x8}").ToList(),
-                RdbSize = rdb.Data.Length,
-                RdbHash = Hash(rdb.Data),
+                Replacements = items.Select(it => $"0x{it.r.FileKtid:x8}").ToList(),
+                RdbSize = c.Rdb.Data.Length,
+                RdbHash = Hash(c.Rdb.Data),
                 RdxSize = rdx2.Data.Length,
                 RdxHash = Hash(rdx2.Data),
             });
-            notes.Add($"{db}: {here.Count} asset(s) → {modsName} (fdata_id {newId})");
-            dbIndex++;
+            notes.Add($"{c.Db}: {redirected} redirected, {added} added → {modsName} (fdata_id {newId})");
         }
 
         if (record.Databases.Count > 0) record.Save(ws.PatchRecordPath);
@@ -120,10 +158,7 @@ public static class PatchEngine
         TryDelete(ws.PatchRecordPath);
     }
 
-    /// <summary>
-    /// rdbpatch.json 기록과 현재 rdb/rdx 지문을 대조해 상태 판별.
-    /// 기록 없음=NotPatched, 일치=Patched, 불일치(업데이트/덮어씀)=NeedsReapply.
-    /// </summary>
+    /// <summary>rdbpatch.json 지문과 현재 rdb/rdx 대조. 없음=NotPatched, 일치=Patched, 불일치=NeedsReapply.</summary>
     public static PatchStatus GetStatus(GameWorkspace ws)
     {
         var rec = PatchRecord.Load(ws.PatchRecordPath);
@@ -141,6 +176,17 @@ public static class PatchEngine
     public static PatchRecord? LoadRecord(GameWorkspace ws) => PatchRecord.Load(ws.PatchRecordPath);
 
     // ---- helpers ----
+
+    private static DbCtx? PickTargetDb(List<DbCtx> loaded, uint typeKtid)
+    {
+        if (typeKtid == AssetTypes.G1s)
+        {
+            var sys = loaded.FirstOrDefault(c => c.Db.Equals("system", StringComparison.OrdinalIgnoreCase));
+            if (sys is not null) return sys;
+        }
+        return loaded.FirstOrDefault(c => c.Db.Equals("root", StringComparison.OrdinalIgnoreCase))
+               ?? loaded.FirstOrDefault();
+    }
 
     private static bool Matches(string path, long size, string hash)
     {

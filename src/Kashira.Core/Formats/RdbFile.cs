@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Linq;
 
 namespace Kashira.Core.Formats;
 
@@ -95,6 +96,49 @@ public sealed class RdbFile
     }
 
     public RdbEntry? Find(uint fileKtid) => _byKtid.GetValueOrDefault(fileKtid);
+
+    /// <summary>주어진 TypeKtid 를 가진 첫 엔트리(새 엔트리 복제용 템플릿).</summary>
+    public RdbEntry? FindByType(uint typeKtid) => Entries.FirstOrDefault(e => e.TypeInfoKtid == typeKtid);
+
+    /// <summary>
+    /// template 엔트리를 복제해 새 file_ktid 엔트리를 RDB 끝에 추가(전략 D).
+    /// entry_type/flags/타입/중간 데이터는 같은 타입 원본에서 복사, file_ktid·file_size·위치만 교체.
+    /// 헤더 file_count 를 증가시킨다. (Location32 전용, 엔트리 배열이 파일 끝까지 채워진 경우)
+    /// </summary>
+    public RdbEntry AppendClone(RdbEntry template, uint fileKtid, int fdataId,
+                                long offset, long sizeInCont, long fileSize)
+    {
+        if (template.DataSize != 0x0D)
+            throw new NotSupportedException($"template data_size 0x{template.DataSize:x} 미지원");
+
+        int stride = (int)((template.EntrySize + 3) & ~3L);
+        int newPos = Data.Length;
+
+        var grown = new byte[Data.Length + stride];
+        Array.Copy(Data, grown, Data.Length);
+        Array.Copy(Data, template.Pos, grown, newPos, stride); // 템플릿 복제
+        Data = grown;
+
+        int metaStart = newPos + (int)template.EntrySize - (int)template.DataSize;
+        BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(newPos + 0x24), fileKtid);
+        BinaryPrimitives.WriteUInt64LittleEndian(Data.AsSpan(newPos + 0x18), (ulong)fileSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(metaStart + 0x02), (uint)offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(metaStart + 0x06), (uint)sizeInCont);
+        BinaryPrimitives.WriteUInt16LittleEndian(Data.AsSpan(metaStart + 0x0A), (ushort)fdataId);
+
+        FileCount += 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(0x10), FileCount);
+
+        var e = new RdbEntry
+        {
+            Index = -1, Pos = newPos, EntrySize = template.EntrySize, DataSize = template.DataSize,
+            FileSize = fileSize, FileKtid = fileKtid, TypeInfoKtid = template.TypeInfoKtid,
+            Flags = template.Flags, FdataId = fdataId, FdataOffset = offset,
+            SizeInCont = sizeInCont, MetaStart = metaStart,
+        };
+        _byKtid[fileKtid] = e;
+        return e;
+    }
 
     /// <summary>엔트리의 위치 메타 + file_size 를 새 값으로 덮어쓴다(Location32 전용). entry_size 불변.</summary>
     public void Redirect(RdbEntry e, int fdataId, long offset, long sizeInCont, long fileSize)

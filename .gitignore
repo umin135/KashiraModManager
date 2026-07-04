@@ -2,6 +2,7 @@
 [Bb]in/
 [Oo]bj/
 [Oo]ut/
+dist/
 *.user
 *.suo
 
@@ -17,7 +18,8 @@ __pycache__/
 # ---- Generated recon/verify dumps ----
 /tools/verify/root_rdb_entries.csv
 
-# ---- Local research docs & agent notes (kept out of repo) ----
+# ---- Local research docs, build scripts & agent notes (kept out of repo) ----
 /_docs
+/scripts
 CLAUDE.md
 README_kr.md
