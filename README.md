@@ -24,9 +24,7 @@ Thanks to everyone who analyzed the Katana Engine RDB format and made this possi
 This project builds on the reverse-engineering work of the projects below.
 
 ### RDB / RDX / FDATA
-- eterniti ([rdbtool](https://github.com/eterniti/rdbtool))
-- eterniti ([qrdbtool](https://github.com/eterniti/qrdbtool))
-- eterniti ([redelbe](https://github.com/eterniti/redelbe))
+- eterniti ([rdbtool](https://github.com/eterniti/rdbtool) | [qrdbtool](https://github.com/eterniti/qrdbtool) | [redelbe](https://github.com/eterniti/redelbe))
 - eArmada8 ([yumia_fdata_tools](https://github.com/eArmada8/yumia_fdata_tools))
 - DeathChaos25 ([fdata_dump](https://github.com/DeathChaos25/fdata_dump))
 - MrIkso ([RDBExplorer](https://github.com/MrIkso/RDBExplorer))
