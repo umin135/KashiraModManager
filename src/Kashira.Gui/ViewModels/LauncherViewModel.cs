@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kashira.Core.Games;
 using Kashira.Core.Icons;
+using Kashira.Core.Update;
 
 namespace Kashira.Gui.ViewModels;
 
@@ -30,6 +31,13 @@ public partial class LauncherViewModel : ViewModelBase
     [ObservableProperty]
     private string _status = "Scan for games or add one manually.";
 
+    [ObservableProperty]
+    private bool _updateAvailable;
+
+    [ObservableProperty]
+    private string _updateText = "";
+
+    private UpdateInfo? _update;
     private bool _initialized;
 
     public async Task InitializeAsync()
@@ -38,9 +46,36 @@ public partial class LauncherViewModel : ViewModelBase
         _initialized = true;
 
         var saved = GameLibrary.Load();
-        if (saved.Count == 0) return;
         foreach (var item in await BuildItemsAsync(saved)) Games.Add(item);
-        Status = $"{Games.Count} game(s) loaded.";
+        if (Games.Count > 0) Status = $"{Games.Count} game(s) loaded.";
+
+        _ = CheckForUpdateAsync(); // 백그라운드 업데이트 확인
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        var info = await Updater.CheckAsync();
+        if (info is null) return;
+        _update = info;
+        UpdateText = $"Update available: {info.TagName}  (current v{Updater.CurrentVersion})";
+        UpdateAvailable = true;
+    }
+
+    [RelayCommand]
+    private async Task Update()
+    {
+        if (_update is null) return;
+        Status = $"Downloading update {_update.TagName}…";
+        try
+        {
+            await Updater.ApplyAsync(_update);
+            Status = "Restarting…";
+            Environment.Exit(0); // 새 프로세스는 이미 시작됨
+        }
+        catch (Exception ex)
+        {
+            Status = $"Update failed: {ex.Message}";
+        }
     }
 
     [RelayCommand]

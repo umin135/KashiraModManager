@@ -31,7 +31,8 @@ public partial class GameDetailViewModel : ViewModelBase
     public ObservableCollection<string> Mods { get; } = new();
 
     [ObservableProperty] private string _status = "";
-    [ObservableProperty] private bool _isApplied;
+    [ObservableProperty] private bool _needsReapply;
+    [ObservableProperty] private string _patchStateText = "";
     [ObservableProperty] private GameDetailTab _tab = GameDetailTab.DebugMods;
 
     public bool IsDebugTab => Tab == GameDetailTab.DebugMods;
@@ -73,11 +74,17 @@ public partial class GameDetailViewModel : ViewModelBase
             foreach (var f in Directory.EnumerateFiles(_ws.ModsDir, "*.ktmod").OrderBy(x => x))
                 Mods.Add(Path.GetFileName(f));
 
-        IsApplied = PatchEngine.IsApplied(_ws);
+        var st = PatchEngine.GetStatus(_ws);
+        NeedsReapply = st == PatchStatus.NeedsReapply;
+        PatchStateText = st switch
+        {
+            PatchStatus.Patched => "PATCHED",
+            PatchStatus.NeedsReapply => "NEEDS RE-APPLY",
+            _ => "CLEAN",
+        };
         OnPropertyChanged(nameof(DebugModsEmpty));
         OnPropertyChanged(nameof(ModsEmpty));
-        Status = $"{DebugMods.Count} inject file(s), {Mods.Count} .ktmod  ·  DB: {string.Join(", ", _ws.Databases)}"
-                 + (IsApplied ? "  ·  APPLIED" : "");
+        Status = $"{DebugMods.Count} inject file(s), {Mods.Count} .ktmod  ·  DB: {string.Join(", ", _ws.Databases)}  ·  {PatchStateText}";
     }
 
     [RelayCommand]
@@ -90,7 +97,7 @@ public partial class GameDetailViewModel : ViewModelBase
         var reps = files.Select(e => new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath))).ToList();
         var report = await Task.Run(() => PatchEngine.Apply(_ws, reps));
 
-        IsApplied = true;
+        Refresh(); // 상태 재계산(디스크 기준)
         var notFound = report.NotFound.Count > 0
             ? $"  Not found in any DB: {string.Join(", ", report.NotFound.Select(k => $"0x{k:x8}"))}"
             : "";
@@ -102,7 +109,7 @@ public partial class GameDetailViewModel : ViewModelBase
     {
         Status = "Reverting…";
         await Task.Run(() => PatchEngine.Revert(_ws));
-        IsApplied = false;
+        Refresh();
         Status = "Reverted to original.";
     }
 

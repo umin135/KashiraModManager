@@ -21,6 +21,14 @@
             </StackPanel>
         </Grid>
 
+        <!-- Re-apply notice (RDB changed since last Apply) -->
+        <Border DockPanel.Dock="Top" IsVisible="{Binding NeedsReapply}"
+                Background="{StaticResource KashiraAccent}" CornerRadius="5"
+                Padding="12,8" Margin="0,0,0,10">
+            <TextBlock Foreground="White" TextWrapping="Wrap"
+                       Text="The game's RDB was updated or overwritten since you last applied mods. Click Apply to re-patch."/>
+        </Border>
+
         <!-- Tab toggle -->
         <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,8">
             <Button Grid.Column="0" Content="DebugMods" Command="{Binding ShowDebugCommand}"

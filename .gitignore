@@ -20,3 +20,4 @@ __pycache__/
 # ---- Local research docs & agent notes (kept out of repo) ----
 /_docs
 CLAUDE.md
+README_kr.md

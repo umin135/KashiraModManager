@@ -11,6 +11,7 @@ public sealed class GameWorkspace
     public string BackupDir => Path.Combine(KashiraDir, "backup");
     public string DebugModsDir => Path.Combine(KashiraDir, "DebugMods");
     public string ModsDir => Path.Combine(KashiraDir, "Mods");
+    public string PatchRecordPath => Path.Combine(KashiraDir, "rdbpatch.json");
 
     public GameWorkspace(GameInstall game)
     {

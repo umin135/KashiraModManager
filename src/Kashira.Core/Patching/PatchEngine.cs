@@ -1,12 +1,13 @@
+using System.Security.Cryptography;
 using Kashira.Core.Formats;
 using Kashira.Core.Games;
 
 namespace Kashira.Core.Patching;
 
 /// <summary>
-/// 전략 B(RDB 리다이렉트) 패치 엔진. 원본 불변 — 항상 깨끗한 백업에서 재계산.
-/// 복수 DB(root/system) 인지: 각 file_ktid 가 속한 DB 를 찾아 그 DB만 패치.
-/// mods.fdata 파일명 해시는 0xCA5E00xx 예약 네임스페이스.
+/// 전략 B(RDB 리다이렉트) 패치 엔진. 원본 불변 — 항상 pristine 원본에서 재계산.
+/// 복수 DB(root/system) 인지: 각 file_ktid 가 속한 DB 만 패치.
+/// Apply 시 _Kashira/rdbpatch.json 에 지문을 기록 → 게임 업데이트로 rdb 가 덮이면 감지.
 /// </summary>
 public static class PatchEngine
 {
@@ -22,8 +23,9 @@ public static class PatchEngine
         Directory.CreateDirectory(ws.BackupDir);
         var notes = new List<string>();
         var matched = new HashSet<uint>();
+        var record = new PatchRecord { PatchedAtUtc = DateTime.UtcNow.ToString("o") };
 
-        // 이전에 남은 mods.fdata 정리 (깨끗한 재계산)
+        // 이전 mods.fdata 정리 (깨끗한 재계산)
         foreach (var f in SafeGlob(ws.PackageDir, ModsGlob)) TryDelete(f);
 
         int dbIndex = 0;
@@ -35,8 +37,23 @@ public static class PatchEngine
             string bakRdx = Path.Combine(ws.BackupDir, db + ".rdx");
             if (!File.Exists(liveRdb) || !File.Exists(liveRdx)) { dbIndex++; continue; }
 
-            if (!File.Exists(bakRdb)) File.Copy(liveRdb, bakRdb);
-            if (!File.Exists(bakRdx)) File.Copy(liveRdx, bakRdx);
+            // pristine 기준 확보:
+            //  - 라이브가 우리 패치 상태면 → 기존 백업이 pristine (없으면 복구 불가 → 스킵)
+            //  - 라이브가 순정이면(최초 or 게임 업데이트로 덮임) → 이걸 새 원본으로 재기준
+            if (RdxHasModsHash(liveRdx))
+            {
+                if (!File.Exists(bakRdb) || !File.Exists(bakRdx))
+                {
+                    notes.Add($"{db}: SKIPPED — live index already patched but no backup exists (restore game files first)");
+                    dbIndex++;
+                    continue;
+                }
+            }
+            else
+            {
+                File.Copy(liveRdb, bakRdb, overwrite: true); // rebaseline
+                File.Copy(liveRdx, bakRdx, overwrite: true);
+            }
 
             var rdb = RdbFile.Parse(File.ReadAllBytes(bakRdb)); // pristine
             var rdx = RdxFile.Parse(File.ReadAllBytes(bakRdx));
@@ -44,8 +61,7 @@ public static class PatchEngine
             var here = replacements.Where(r => rdb.Find(r.FileKtid) is not null).ToList();
             if (here.Count == 0)
             {
-                // 이 DB 는 영향 없음 → 원본 그대로 복원
-                File.Copy(bakRdb, liveRdb, overwrite: true);
+                File.Copy(bakRdb, liveRdb, overwrite: true); // 이 DB 는 순정 그대로
                 File.Copy(bakRdx, liveRdx, overwrite: true);
                 dbIndex++;
                 continue;
@@ -59,26 +75,35 @@ public static class PatchEngine
             foreach (var r in here)
             {
                 var e = rdb.Find(r.FileKtid)!;
-                var template = ReadTemplateHeader(ws.PackageDir, rdx, e);
-                builder.Add(r.FileKtid, r.AssetBytes, template);
+                builder.Add(r.FileKtid, r.AssetBytes, ReadTemplateHeader(ws.PackageDir, rdx, e));
                 matched.Add(r.FileKtid);
             }
-
             foreach (var b in builder.Blocks)
                 rdb.Redirect(rdb.Find(b.Ktid)!, newId, b.Offset, b.BlockSize, b.RawSize);
-
             var rdx2 = rdx.WithEntry(newId, modsHash);
 
             File.WriteAllBytes(Path.Combine(ws.PackageDir, modsName), builder.ToBytes());
             File.WriteAllBytes(liveRdb, rdb.Data);
             File.WriteAllBytes(liveRdx, rdx2.Data);
 
+            record.Databases.Add(new DbPatchInfo
+            {
+                Db = db,
+                ModsFdata = modsName,
+                Replacements = here.Select(h => $"0x{h.FileKtid:x8}").ToList(),
+                RdbSize = rdb.Data.Length,
+                RdbHash = Hash(rdb.Data),
+                RdxSize = rdx2.Data.Length,
+                RdxHash = Hash(rdx2.Data),
+            });
             notes.Add($"{db}: {here.Count} asset(s) → {modsName} (fdata_id {newId})");
             dbIndex++;
         }
 
-        var notFound = replacements.Where(r => !matched.Contains(r.FileKtid))
-                                   .Select(r => r.FileKtid).ToList();
+        if (record.Databases.Count > 0) record.Save(ws.PatchRecordPath);
+        else TryDelete(ws.PatchRecordPath);
+
+        var notFound = replacements.Where(r => !matched.Contains(r.FileKtid)).Select(r => r.FileKtid).ToList();
         return new Report(replacements.Count, matched.Count, notFound, notes);
     }
 
@@ -92,11 +117,55 @@ public static class PatchEngine
             if (File.Exists(bakRdx)) File.Copy(bakRdx, Path.Combine(ws.PackageDir, db + ".rdx"), true);
         }
         foreach (var f in SafeGlob(ws.PackageDir, ModsGlob)) TryDelete(f);
+        TryDelete(ws.PatchRecordPath);
     }
 
-    public static bool IsApplied(GameWorkspace ws) => SafeGlob(ws.PackageDir, ModsGlob).Any();
+    /// <summary>
+    /// rdbpatch.json 기록과 현재 rdb/rdx 지문을 대조해 상태 판별.
+    /// 기록 없음=NotPatched, 일치=Patched, 불일치(업데이트/덮어씀)=NeedsReapply.
+    /// </summary>
+    public static PatchStatus GetStatus(GameWorkspace ws)
+    {
+        var rec = PatchRecord.Load(ws.PatchRecordPath);
+        if (rec is null || rec.Databases.Count == 0) return PatchStatus.NotPatched;
+
+        foreach (var d in rec.Databases)
+        {
+            if (!Matches(Path.Combine(ws.PackageDir, d.Db + ".rdb"), d.RdbSize, d.RdbHash) ||
+                !Matches(Path.Combine(ws.PackageDir, d.Db + ".rdx"), d.RdxSize, d.RdxHash))
+                return PatchStatus.NeedsReapply;
+        }
+        return PatchStatus.Patched;
+    }
+
+    public static PatchRecord? LoadRecord(GameWorkspace ws) => PatchRecord.Load(ws.PatchRecordPath);
 
     // ---- helpers ----
+
+    private static bool Matches(string path, long size, string hash)
+    {
+        try
+        {
+            if (!File.Exists(path)) return false;
+            var bytes = File.ReadAllBytes(path);
+            return bytes.Length == size && Hash(bytes) == hash;
+        }
+        catch { return false; }
+    }
+
+    private static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data));
+
+    private static bool IsModsHash(uint fileHash) => (fileHash >> 16) == 0xCA5E;
+
+    private static bool RdxHasModsHash(string rdxPath)
+    {
+        try
+        {
+            if (!File.Exists(rdxPath)) return false;
+            return RdxFile.Parse(File.ReadAllBytes(rdxPath)).Map.Values.Any(IsModsHash);
+        }
+        catch { return false; }
+    }
 
     private static byte[] ReadTemplateHeader(string packageDir, RdxFile rdx, RdbEntry e)
     {
@@ -128,6 +197,6 @@ public static class PatchEngine
 
     private static void TryDelete(string path)
     {
-        try { File.Delete(path); } catch { /* ignore */ }
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* ignore */ }
     }
 }
