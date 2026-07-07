@@ -50,6 +50,20 @@
                    Foreground="{StaticResource KashiraTextDim}" FontSize="12" Margin="4,10,4,0"
                    TextWrapping="Wrap"/>
 
+        <!-- Steam auto-apply (launch options) -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource KashiraPanel}" CornerRadius="6"
+                Padding="10" Margin="0,10,0,0">
+            <StackPanel Spacing="6">
+                <TextBlock Foreground="{StaticResource KashiraTextDim}" FontSize="12" TextWrapping="Wrap"
+                           Text="In Steam, paste the value below into this game's Properties → Launch Options. All mods are then applied automatically whenever you launch the game."/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0" Text="{Binding SteamLaunchCommand}" IsReadOnly="True"
+                             FontSize="12" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Copy" Click="OnCopySteamClick" Margin="8,0,0,0"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
         <!-- Content: switches with the tab -->
         <Border Background="{StaticResource KashiraPanel}" CornerRadius="6" Padding="4">
             <Panel>

@@ -24,6 +24,16 @@ public partial class GameDetailViewModel : ViewModelBase
     public string GameName => _game.DisplayName;
     public string InstallPath => _game.InstallPath;
 
+    /// <summary>Steam 실행옵션에 붙여넣을 문자열 (게임 실행 전 모드 자동 Apply).</summary>
+    public string SteamLaunchCommand
+    {
+        get
+        {
+            var exe = Environment.ProcessPath ?? "Kashira.exe";
+            return $"\"{exe}\" --steam-run -- %command%";
+        }
+    }
+
     /// <summary>DebugMods 폴더의 주입 대상 파일들.</summary>
     public ObservableCollection<DebugModItemViewModel> DebugMods { get; } = new();
 
