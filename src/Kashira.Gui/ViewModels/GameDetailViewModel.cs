@@ -5,9 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kashira.Core.Games;
+using Kashira.Core.Mods;
 using Kashira.Core.Patching;
 
 namespace Kashira.Gui.ViewModels;
@@ -37,8 +39,8 @@ public partial class GameDetailViewModel : ViewModelBase
     /// <summary>DebugMods 폴더의 주입 대상 파일들.</summary>
     public ObservableCollection<DebugModItemViewModel> DebugMods { get; } = new();
 
-    /// <summary>Mods 폴더의 .ktmod 패키지들 (표시만, 미구현).</summary>
-    public ObservableCollection<string> Mods { get; } = new();
+    /// <summary>Mods 폴더의 .ktmod 패키지들.</summary>
+    public ObservableCollection<KtmodItemViewModel> Mods { get; } = new();
 
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private bool _needsReapply;
@@ -81,8 +83,11 @@ public partial class GameDetailViewModel : ViewModelBase
 
         Mods.Clear();
         if (Directory.Exists(_ws.ModsDir))
-            foreach (var f in Directory.EnumerateFiles(_ws.ModsDir, "*.ktmod").OrderBy(x => x))
-                Mods.Add(Path.GetFileName(f));
+            foreach (var f in Directory.EnumerateFiles(_ws.ModsDir, "*.ktmod").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            {
+                var pkg = KtmodPackage.Load(f);
+                if (pkg is not null) Mods.Add(new KtmodItemViewModel(pkg, _game));
+            }
 
         var st = PatchEngine.GetStatus(_ws);
         NeedsReapply = st == PatchStatus.NeedsReapply;
@@ -100,18 +105,21 @@ public partial class GameDetailViewModel : ViewModelBase
     [RelayCommand]
     private async Task Apply()
     {
-        var files = Core.Patching.DebugMods.List(_ws.DebugModsDir);
-        if (files.Count == 0) { Status = "No DebugMods files to inject. Drop 0x{ktid}.ext files there first."; return; }
-
         Status = "Applying…";
-        var reps = files.Select(e => new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath), e.Ext)).ToList();
-        var report = await Task.Run(() => PatchEngine.Apply(_ws, reps));
+        var gather = await Task.Run(() => ModApplier.Gather(_ws, _game));
+        if (gather.Replacements.Count == 0)
+        {
+            Status = "Nothing to apply. Drop 0x{ktid}.ext files into DebugMods, or a compatible .ktmod into Mods.";
+            return;
+        }
+
+        var report = await Task.Run(() => PatchEngine.Apply(_ws, gather.Replacements));
 
         Refresh(); // 상태 재계산(디스크 기준)
-        var notFound = report.NotFound.Count > 0
-            ? $"  Not found in any DB: {string.Join(", ", report.NotFound.Select(k => $"0x{k:x8}"))}"
+        var incompat = gather.Incompatible.Count > 0
+            ? $"  Skipped (wrong game): {string.Join(", ", gather.Incompatible)}"
             : "";
-        Status = $"Applied {report.Applied}/{report.Requested}.{notFound}";
+        Status = $"Applied {report.Applied}/{report.Requested}  ·  DebugMods {gather.DebugCount}, ktmod {gather.KtmodCount}.{incompat}";
     }
 
     [RelayCommand]
@@ -153,4 +161,32 @@ public sealed class DebugModItemViewModel
     public string SizeText => _e.Size >= 1024 * 1024
         ? $"{_e.Size / 1024.0 / 1024.0:0.0} MB"
         : $"{_e.Size / 1024.0:0.0} KB";
+}
+
+/// <summary>Mods 탭의 .ktmod 패키지 1개 표시용 래퍼.</summary>
+public sealed class KtmodItemViewModel
+{
+    private readonly KtmodPackage _pkg;
+    private readonly GameInstall _game;
+
+    public KtmodItemViewModel(KtmodPackage pkg, GameInstall game)
+    {
+        _pkg = pkg;
+        _game = game;
+        if (pkg.ThumbPng is not null)
+        {
+            try { Thumb = new Bitmap(new MemoryStream(pkg.ThumbPng)); }
+            catch { /* 손상 PNG → 플레이스홀더 */ }
+        }
+    }
+
+    public string Name => _pkg.Name;
+    public string Author => string.IsNullOrWhiteSpace(_pkg.Author) ? "Unknown author" : _pkg.Author!;
+    public string Description => string.IsNullOrWhiteSpace(_pkg.Description) ? "(no description)" : _pkg.Description!;
+    public string TargetText => string.IsNullOrWhiteSpace(_pkg.Target) ? "Target: (none)" : $"Target: {_pkg.Target}";
+    public string InfoLine => $"{_pkg.Legacy.Count} file(s)  ·  {(IsCompatible ? "Compatible" : "Not this game")}";
+    public bool IsCompatible => _pkg.MatchesGame(_game);
+
+    public Bitmap? Thumb { get; }
+    public bool HasThumb => Thumb is not null;
 }

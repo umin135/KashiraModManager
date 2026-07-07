@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Kashira.Core.Games;
+using Kashira.Core.Mods;
 using Kashira.Core.Patching;
 
 namespace Kashira.Gui;
@@ -18,9 +19,10 @@ sealed class Program
     {
         Kashira.Core.Update.Updater.CleanupOld(); // 이전 업데이트 잔여물 정리
 
-        // Steam 래핑 모드: 실행옵션 `"Kashira.exe" --steam-run -- %command%`
-        // Steam 이 게임 실행 시 우리를 먼저 부름 → 모드 Apply 후 진짜 게임을 자식으로 실행.
-        if (args.Contains("--steam-run"))
+        // 헤드리스 실행-래핑 모드: `"Kashira.exe" --run -- <게임 exe/커맨드>`
+        // Steam 실행옵션이면 `%command%`, 스탠드얼론이면 게임 exe 절대경로가 `--` 뒤에 온다.
+        // 우리를 먼저 부름 → 모드 Apply 후 진짜 게임을 자식으로 실행. (--steam-run 은 하위호환 별칭)
+        if (args.Contains("--run") || args.Contains("--steam-run"))
             return SteamRun(args);
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -78,13 +80,10 @@ sealed class Program
             if (game is null) return;
 
             var ws = new GameWorkspace(game);
-            var files = DebugMods.List(ws.DebugModsDir);
-            if (files.Count == 0) return;
+            var gather = ModApplier.Gather(ws, game); // DebugMods + 호환 .ktmod
+            if (gather.Replacements.Count == 0) return;
 
-            var reps = files
-                .Select(f => new PatchEngine.Replacement(f.FileKtid, File.ReadAllBytes(f.FullPath), f.Ext))
-                .ToList();
-            PatchEngine.Apply(ws, reps);
+            PatchEngine.Apply(ws, gather.Replacements);
         }
         catch { /* never block launch */ }
     }

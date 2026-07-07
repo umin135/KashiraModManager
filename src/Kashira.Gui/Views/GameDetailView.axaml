@@ -94,8 +94,38 @@
 
                 <!-- Mods (.ktmod packages) -->
                 <Panel IsVisible="{Binding IsModsTab}">
-                    <ListBox ItemsSource="{Binding Mods}" Background="Transparent"/>
-                    <TextBlock Text="Packaged .ktmod support is not implemented yet."
+                    <ListBox ItemsSource="{Binding Mods}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:KtmodItemViewModel">
+                                <Grid ColumnDefinitions="Auto,*" Margin="4,6">
+                                    <!-- thumbnail (or placeholder) -->
+                                    <Panel Grid.Column="0" Width="72" Height="72" Margin="0,0,12,0">
+                                        <Border Background="{StaticResource KashiraBg}" CornerRadius="4"
+                                                IsVisible="{Binding !HasThumb}">
+                                            <TextBlock Text="KTMOD" Foreground="{StaticResource KashiraTextDim}"
+                                                       FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <Border CornerRadius="4" ClipToBounds="True" IsVisible="{Binding HasThumb}">
+                                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                        </Border>
+                                    </Panel>
+                                    <!-- metadata -->
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraText}"
+                                                   FontSize="14" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding Author}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                                        <TextBlock Text="{Binding Description}" Foreground="{StaticResource KashiraTextDim}"
+                                                   FontSize="11" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                                            <TextBlock Text="{Binding TargetText}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                                            <TextBlock Text="{Binding InfoLine}" Foreground="{StaticResource KashiraAccent}" FontSize="11"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="Drop a .ktmod (uncompressed zip renamed to .ktmod) into the Mods folder, then Apply."
                                IsVisible="{Binding ModsEmpty}"
                                Foreground="{StaticResource KashiraTextDim}" FontSize="12"
                                TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>

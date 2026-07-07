@@ -15,8 +15,13 @@ public static class PatchEngine
     private const uint ModsHashBase = 0xCA5E0001;
     private const string ModsGlob = "0xca5e*.fdata";
 
-    /// <summary>Ext 는 신규 등록 시 타입 결정용(파일 확장자). 기존 에셋 교체엔 불필요.</summary>
-    public sealed record Replacement(uint FileKtid, byte[] AssetBytes, string? Ext = null);
+    /// <summary>
+    /// Ext 는 신규 등록 시 타입 결정용(파일 확장자). 기존 에셋 교체엔 불필요.
+    /// RedirectOnly=true 면 RDB 에 없는 ktid 는 신규 등록하지 않고 건너뛴다(ktmod Content_Legacy 규칙).
+    /// TargetDb 가 지정되면 그 DB(root/system…)에서만 찾아 리다이렉트한다(다른 DB 탐색·신규등록 안 함).
+    /// 없으면 전체 DB 를 탐색하고, 어디에도 없으면 RedirectOnly 가 아닐 때 신규 등록.
+    /// </summary>
+    public sealed record Replacement(uint FileKtid, byte[] AssetBytes, string? Ext = null, bool RedirectOnly = false, string? TargetDb = null);
 
     public sealed record Report(int Requested, int Applied, IReadOnlyList<uint> NotFound, IReadOnlyList<string> Notes);
 
@@ -67,8 +72,25 @@ public static class PatchEngine
         var work = loaded.ToDictionary(c => c.Db, _ => new List<(Replacement r, bool isNew, uint typeKtid)>());
         foreach (var r in replacements)
         {
+            // TargetDb 지정: 그 DB 에서만 리다이렉트 (전체 탐색·신규등록 안 함)
+            if (r.TargetDb is not null)
+            {
+                var db = loaded.FirstOrDefault(c => c.Db.Equals(r.TargetDb, StringComparison.OrdinalIgnoreCase));
+                if (db is not null && db.Rdb.Find(r.FileKtid) is not null)
+                    work[db.Db].Add((r, false, 0));
+                else
+                    notes.Add($"0x{r.FileKtid:x8}: not found in DB '{r.TargetDb}' — skipped");
+                continue;
+            }
+
             var host = loaded.FirstOrDefault(c => c.Rdb.Find(r.FileKtid) is not null);
             if (host is not null) { work[host.Db].Add((r, false, 0)); continue; }
+
+            if (r.RedirectOnly)
+            {
+                notes.Add($"0x{r.FileKtid:x8}: not present in any DB — skipped (redirect-only)");
+                continue;
+            }
 
             if (!AssetTypes.TryGetTypeKtid(r.Ext, out var typeKtid))
             {
