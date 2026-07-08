@@ -21,5 +21,6 @@ __pycache__/
 # ---- Local research docs, build scripts & agent notes (kept out of repo) ----
 /_docs
 /scripts
+/tools
 CLAUDE.md
 README_kr.md
