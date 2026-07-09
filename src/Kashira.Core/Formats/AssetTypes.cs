@@ -11,8 +11,15 @@ public static class AssetTypes
         ["g1t"] = 0xAFBEC60C,
         ["g1a"] = 0x6FA91671,
         ["g1s"] = G1s,
-        ["mtl"] = 0x5153729B,
+        ["mtl"] = 0xB340861A,   // 실측 정정: 이전 0x5153729B 는 오류 → 새 mtl 이 잘못된 타입으로 등록돼 코스튬 로드 실패
         ["ktid"] = 0x8E39AA37,
+        ["grp"] = 0x56EFE45C,
+        ["oid"] = 0x1AB40AE8,     // OIDBindTableBinaryFile (oidex와 별개 타입)
+        ["oidex"] = 0xE6A3C3BB,
+        ["rigbin"] = 0x27BC54B7,
+        ["swg"] = 0x5C3E543C,
+        ["sid"] = 0x133D2C3B,
+        ["kts"] = 0xED410290,
         ["kidsobjdb"] = 0x20A6A0BB,
         ["srsa"] = 0xBBD39F2D,
         ["srst"] = 0x0D34474D,
