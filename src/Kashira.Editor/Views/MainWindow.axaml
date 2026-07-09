@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Kashira.Editor.Views.MainWindow"
+        Width="960" Height="640"
+        Title="Kashira Editor"
+        Background="{StaticResource KashiraBg}">
+
+    <StackPanel Margin="28" Spacing="10" VerticalAlignment="Top">
+        <TextBlock Text="Kashira Editor" FontSize="26" FontWeight="Bold"
+                   Foreground="{StaticResource KashiraText}"/>
+        <TextBlock Text="Mod authoring — convert, edit, and package .ktmod"
+                   FontSize="14" Foreground="{StaticResource KashiraTextDim}"/>
+    </StackPanel>
+</Window>
