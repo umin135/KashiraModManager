@@ -33,13 +33,17 @@ public sealed class KtmodPackage
     /// <summary>Content_Legacy 의 교체 대상 엔트리들.</summary>
     public IReadOnlyList<LegacyEntry> Legacy { get; }
 
+    /// <summary>Content/ 코스튬 매니페스트들(Content/&lt;set&gt;.json).</summary>
+    public IReadOnlyList<CostumeManifest> CostumeManifests { get; }
+
     /// <summary>Db 는 Content_Legacy 아래 폴더명(root/system…). null 이면 전체 DB 탐색.</summary>
     public sealed record LegacyEntry(uint FileKtid, string Ext, string? Db, string EntryName);
 
     private const int MaxPreviews = 5;
 
     private KtmodPackage(string filePath, string target, string author, string description,
-        byte[]? thumb, IReadOnlyList<byte[]> previews, IReadOnlyList<LegacyEntry> legacy)
+        byte[]? thumb, IReadOnlyList<byte[]> previews, IReadOnlyList<LegacyEntry> legacy,
+        IReadOnlyList<CostumeManifest> costumeManifests)
     {
         FilePath = filePath;
         Target = target;
@@ -48,6 +52,7 @@ public sealed class KtmodPackage
         ThumbPng = thumb;
         Previews = previews;
         Legacy = legacy;
+        CostumeManifests = costumeManifests;
     }
 
     /// <summary>.ktmod 를 파싱. 실패(손상/비ZIP 등)하면 null.</summary>
@@ -90,7 +95,15 @@ public sealed class KtmodPackage
                 legacy.Add(new LegacyEntry(ktid, ext, db, e.FullName));
             }
 
-            return new KtmodPackage(path, target ?? "", author ?? "", description ?? "", thumb, previews, legacy);
+            var manifests = new List<CostumeManifest>();
+            foreach (var e in zip.Entries)
+            {
+                if (!IsContentManifest(e.FullName)) continue;
+                var cm = CostumeManifest.Parse(ReadText(e));
+                if (cm is not null) manifests.Add(cm);
+            }
+
+            return new KtmodPackage(path, target ?? "", author ?? "", description ?? "", thumb, previews, legacy, manifests);
         }
         catch
         {
@@ -160,6 +173,76 @@ public sealed class KtmodPackage
             if (segs[i].Equals(folder, StringComparison.OrdinalIgnoreCase) && i == segs.Length - 2)
                 return segs[^1];
         return null;
+    }
+
+    /// <summary>Content/ 바로 아래의 .json 매니페스트인가 (Content/&lt;set&gt;.json). 하위 폴더의 파일 데이터는 제외.</summary>
+    private static bool IsContentManifest(string full)
+    {
+        var segs = Segments(full);
+        for (int i = 0; i < segs.Length; i++)
+            if (segs[i].Equals("Content", StringComparison.OrdinalIgnoreCase)
+                && i == segs.Length - 2
+                && segs[^1].EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 저작 매니페스트의 @참조를 Content/ 파일 바이트로 해석해 설치 입력을 만든다(zip 열어 읽음).
+    /// @이름.ext → Content/ 아래 leaf 파일명이 "이름.ext" 인 파일. mesh/텍스처 누락 시 null.
+    /// </summary>
+    public Doa6.CostumeAuthorInstaller.AuthoredCostume? BuildAuthored(CostumeManifest m)
+    {
+        if (!m.IsAuthored || m.Mesh is null) return null;
+        using var zip = ZipFile.OpenRead(FilePath);
+        var files = ContentFilesByLeaf(zip);
+
+        byte[]? Resolve(string? atRef)
+        {
+            if (string.IsNullOrWhiteSpace(atRef)) return null;
+            var leaf = atRef.TrimStart('@');
+            return files.TryGetValue(leaf, out var e) ? ReadAll(e) : null;
+        }
+
+        var g1m = Resolve(m.Mesh.G1m);
+        var grp = Resolve(m.Mesh.Grp);
+        var mtl = Resolve(m.Mesh.Mtl);
+        if (g1m is null || grp is null || mtl is null) return null;
+
+        // 재질 스펙 → 설치 재질 + 참조된 텍스처 수집
+        var texFiles = new Dictionary<string, byte[]>();
+        var mats = new List<Doa6.CostumeAuthorInstaller.AuthoredMaterial>();
+        foreach (var spec in m.Materials)
+        {
+            foreach (var perVar in spec.Slots)
+                foreach (var atRef in perVar.Values)
+                    if (!texFiles.ContainsKey(atRef))
+                    {
+                        var b = Resolve(atRef);
+                        if (b is null) return null; // 필수 텍스처 누락
+                        texFiles[atRef] = b;
+                    }
+            mats.Add(new Doa6.CostumeAuthorInstaller.AuthoredMaterial(spec.VariationAffecting, spec.Slots));
+        }
+
+        return new Doa6.CostumeAuthorInstaller.AuthoredCostume(
+            m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles);
+    }
+
+    /// <summary>Content/ 아래 모든 비-json 파일을 leaf 파일명 → 엔트리로(@참조 전역 스코프).</summary>
+    private static Dictionary<string, ZipArchiveEntry> ContentFilesByLeaf(ZipArchive zip)
+    {
+        var map = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in zip.Entries)
+        {
+            var segs = Segments(e.FullName);
+            int ci = Array.FindIndex(segs, s => s.Equals("Content", StringComparison.OrdinalIgnoreCase));
+            if (ci < 0 || ci >= segs.Length - 1) continue;                 // Content 아래 아님
+            var leaf = segs[^1];
+            if (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue; // 매니페스트 제외
+            map[leaf] = e;                                                  // leaf 유일성 가정
+        }
+        return map;
     }
 
     /// <summary>preview/ 또는 thumb/ 폴더 바로 아래의 .png 인가 (갤러리).</summary>

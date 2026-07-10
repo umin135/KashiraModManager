@@ -127,6 +127,10 @@ public sealed class IdokRecord
         return new IdokRecord(oid, type, props);
     }
 
+    /// <summary>새 oid 로 깊은 복사(모든 prop 값 복제). 새 레코드 생성(insert_record)용 템플릿 복제.</summary>
+    public IdokRecord Clone(uint newOid) =>
+        new(newOid, Type, Props.Select(p => new IdokProp(p.Type, p.NameHash, p.Count, (byte[])p.Value.Clone())).ToList());
+
     public IdokProp? Prop(uint nameHash) => Props.FirstOrDefault(p => p.NameHash == nameHash);
 
     /// <summary>단일 u32 prop 값 읽기(없으면 0).</summary>
@@ -142,6 +146,15 @@ public sealed class IdokRecord
         for (int i = 0; i < outArr.Length; i++)
             outArr[i] = BinaryPrimitives.ReadUInt32LittleEndian(p.Value.AsSpan(i * 4));
         return outArr;
+    }
+
+    /// <summary>단일 u32 prop 값을 in-place 교체(크기 불변). prop 없거나 값이 4바이트 미만이면 false.</summary>
+    public bool SetU32(uint nameHash, uint value)
+    {
+        var p = Prop(nameHash);
+        if (p is null || p.Value.Length < 4) return false;
+        BinaryPrimitives.WriteUInt32LittleEndian(p.Value.AsSpan(0), value);
+        return true;
     }
 
     /// <summary>u32 배열 prop 교체(크기 변경 허용 — array_count 자동 갱신).</summary>

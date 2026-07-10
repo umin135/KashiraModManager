@@ -1,3 +1,4 @@
+using Kashira.Core.Doa6;
 using Kashira.Core.Games;
 using Kashira.Core.Patching;
 
@@ -27,6 +28,8 @@ public static class ModApplier
 
         int ktmodCount = 0;
         var incompatible = new List<string>();
+        var swaps = new List<CostumeInstaller.Swap>();
+        var authored = new List<CostumeAuthorInstaller.AuthoredCostume>();
         if (Directory.Exists(ws.ModsDir))
         {
             foreach (var f in Directory.EnumerateFiles(ws.ModsDir, "*.ktmod").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
@@ -35,9 +38,21 @@ public static class ModApplier
                 if (pkg is null) continue;
                 if (!pkg.MatchesGame(game)) { incompatible.Add(pkg.Name); continue; }
                 reps.AddRange(pkg.BuildReplacements());
+                // Content 코스튬 매니페스트: 스왑(SourceCostume) / 저작(Mesh+Materials)
+                foreach (var cm in pkg.CostumeManifests)
+                {
+                    if (cm.IsSwap)
+                        swaps.Add(new CostumeInstaller.Swap(cm.TargetCostume, cm.SourceCostume!));
+                    else if (cm.IsAuthored && pkg.BuildAuthored(cm) is { } ac)
+                        authored.Add(ac);
+                }
                 ktmodCount++;
             }
         }
+
+        // 모든 코스튬 스왑/저작을 하나의 싱글톤 세트에 누적 적용(같은 DOK 편집 병합) 후 Replacement 로.
+        if (swaps.Count > 0 || authored.Count > 0)
+            reps.AddRange(CostumeInstaller.BuildReplacements(ws, swaps, authored));
 
         return new GatherResult(reps, debugCount, ktmodCount, incompatible);
     }
