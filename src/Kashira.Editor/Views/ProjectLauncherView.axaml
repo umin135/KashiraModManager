@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kashira.Editor.ViewModels"
+             xmlns:mods="using:Kashira.Core.Mods"
+             x:Class="Kashira.Editor.Views.ProjectLauncherView"
+             x:DataType="vm:ProjectLauncherViewModel"
+             x:CompileBindings="True">
+
+    <Grid Margin="28" RowDefinitions="Auto,*,Auto">
+
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,20">
+            <TextBlock Text="{Binding Title}" FontSize="26" FontWeight="Bold"
+                       Foreground="{StaticResource KashiraText}"/>
+            <TextBlock Text="{Binding Subtitle}" FontSize="14"
+                       Foreground="{StaticResource KashiraTextDim}"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="360,*" ColumnSpacing="24">
+
+            <StackPanel Grid.Column="0" Spacing="10">
+                <TextBlock Text="New Project" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource KashiraText}"/>
+                <TextBlock Text="Name" Foreground="{StaticResource KashiraTextDim}"/>
+                <TextBox Text="{Binding NewName}"/>
+                <TextBlock Text="Location" Foreground="{StaticResource KashiraTextDim}"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <TextBox Grid.Column="0" Text="{Binding NewLocation}"/>
+                    <Button Grid.Column="1" Content="…" Command="{Binding BrowseLocationCommand}"/>
+                </Grid>
+                <TextBlock Text="Target Game" Foreground="{StaticResource KashiraTextDim}"/>
+                <TextBox Text="{Binding NewTargetGame}"/>
+                <Button Content="Create Project" Classes="accent" HorizontalAlignment="Stretch"
+                        Command="{Binding CreateCommand}" Margin="0,6,0,0"/>
+
+                <Separator Margin="0,12"/>
+                <Button Content="Open Existing Project…" HorizontalAlignment="Stretch"
+                        Command="{Binding OpenCommand}"/>
+            </StackPanel>
+
+            <DockPanel Grid.Column="1">
+                <TextBlock DockPanel.Dock="Top" Text="Recent Projects" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource KashiraText}" Margin="0,0,0,10"/>
+                <TextBlock DockPanel.Dock="Top" Text="No recent projects yet. (double-click to open)"
+                           Foreground="{StaticResource KashiraTextDim}"
+                           IsVisible="{Binding !HasRecent}"/>
+                <ListBox x:Name="RecentList" ItemsSource="{Binding Recent}" Background="Transparent"
+                         DoubleTapped="OnRecentDoubleTapped">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="mods:EditorProjects+Recent">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                               Foreground="{StaticResource KashiraText}"/>
+                                    <TextBlock Text="{Binding Path}" FontSize="11"
+                                               Foreground="{StaticResource KashiraTextDim}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding TargetGame}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource KashiraTextDim}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="{Binding Status}" Margin="0,14,0,0"
+                   Foreground="{StaticResource KashiraTextDim}"/>
+    </Grid>
+</UserControl>
