@@ -221,6 +221,8 @@ public sealed class KtmodPackage
         foreach (var spec in m.Materials)
         {
             foreach (var perVar in spec.Slots)
+            {
+                if (perVar is null) continue; // null 변형 = base 폴백(참조 텍스처 없음)
                 foreach (var atRef in perVar.Values)
                     if (!texFiles.ContainsKey(atRef))
                     {
@@ -228,6 +230,7 @@ public sealed class KtmodPackage
                         if (b is null) return null; // 필수 텍스처 누락
                         texFiles[atRef] = b;
                     }
+            }
             mats.Add(new Doa6.CostumeAuthorInstaller.AuthoredMaterial(spec.VariationAffecting, spec.Slots));
         }
 

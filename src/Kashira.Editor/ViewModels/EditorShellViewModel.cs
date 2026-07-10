@@ -8,6 +8,7 @@ namespace Kashira.Editor.ViewModels;
 public partial class EditorShellViewModel : ViewModelBase
 {
     private readonly ProjectLauncherViewModel _launcher;
+    private Func<Task<string?>>? _folderPicker;
 
     [ObservableProperty]
     private ViewModelBase _currentPage;
@@ -20,15 +21,15 @@ public partial class EditorShellViewModel : ViewModelBase
         _launcher = new ProjectLauncherViewModel
         {
             OpenProject = project =>
-                CurrentPage = new ProjectWorkspaceViewModel(project, GoToLauncher, FilePicker),
+                CurrentPage = new ProjectWorkspaceViewModel(project, GoToLauncher, FilePicker, _folderPicker),
         };
         _currentPage = _launcher;
     }
 
-    /// <summary>View 가 폴더 선택기를 주입(New 위치 선택).</summary>
+    /// <summary>View 가 폴더 선택기를 주입(New 위치 선택 + 번들 폴더 선택).</summary>
     public Func<Task<string?>>? FolderPicker
     {
-        set => _launcher.FolderPicker = value;
+        set { _launcher.FolderPicker = value; _folderPicker = value; }
     }
 
     /// <summary>View 가 프로젝트 열기 선택기를 주입(폴더 또는 .ktproj).</summary>

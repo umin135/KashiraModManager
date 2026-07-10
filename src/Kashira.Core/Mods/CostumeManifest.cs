@@ -57,11 +57,13 @@ public sealed record CostumeManifest(
         string mode = Str(mat, "Mode") ?? "constant";
         bool variation = mode.Equals("variation", StringComparison.OrdinalIgnoreCase);
 
-        var perVar = new List<IReadOnlyDictionary<int, string>>();
+        // 변형 항목이 null 이면 그 변형은 base 폴백(MI=0, 오버라이드 없음)을 뜻한다.
+        var perVar = new List<IReadOnlyDictionary<int, string>?>();
         if (variation)
         {
             if (mat.TryGetProperty("Variations", out var vs) && vs.ValueKind == JsonValueKind.Array)
-                foreach (var v in vs.EnumerateArray()) perVar.Add(ParseSlots(v));
+                foreach (var v in vs.EnumerateArray())
+                    perVar.Add(v.ValueKind == JsonValueKind.Null ? null : ParseSlots(v));
         }
         else if (mat.TryGetProperty("Textures", out var tx))
         {
@@ -89,5 +91,5 @@ public sealed record CostumeManifest(
 /// <summary>저작 메시 에셋 심볼릭 참조(@파일이름).</summary>
 public sealed record MeshRefs(string? G1m, string? Grp, string? Mtl);
 
-/// <summary>한 재질 = 변형-영향 여부 + 변형별 (슬롯 인덱스 → @텍스처).</summary>
-public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>> Slots);
+/// <summary>한 재질 = 변형-영향 여부 + 변형별 (슬롯 인덱스 → @텍스처). 변형 항목이 null 이면 그 변형은 base 폴백.</summary>
+public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots);

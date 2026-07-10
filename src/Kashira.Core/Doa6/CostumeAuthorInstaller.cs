@@ -11,8 +11,8 @@ namespace Kashira.Core.Doa6;
 /// </summary>
 public static class CostumeAuthorInstaller
 {
-    /// <summary>한 재질의 저작 정의. 변형별 (텍스처 슬롯 인덱스 → @텍스처 이름).</summary>
-    public sealed record AuthoredMaterial(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>> Slots);
+    /// <summary>한 재질의 저작 정의. 변형별 (텍스처 슬롯 인덱스 → @텍스처 이름). 변형 항목이 null 이면 그 변형은 base 폴백(MI=0).</summary>
+    public sealed record AuthoredMaterial(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots);
 
     /// <summary>
     /// 저작 코스튬 입력. 텍스처는 @이름 → g1t 바이트로 전달(모드 파일에서 로드).
@@ -54,6 +54,13 @@ public static class CostumeAuthorInstaller
         var dm = set.DisplaysetModel(tgt);
         dm.SetU32(Doa6SingletonSet.P_Dm_Grp, fkGrp);
         dm.SetU32(Doa6SingletonSet.P_Dm_Mtl, fkMtl);
+
+        // base ktid: 소스(MaterialTemplate)의 base ktid FK 로 타겟 DM.TBC 를 repoint(canonical 참조, 온라인 안전).
+        //   → MI=0(base 폴백) 슬롯이 소스 base 텍스처로 렌더된다. base 텍스처 편집은 이후 과제.
+        uint srcBaseKtid = mod.MaterialTemplateCostume is { } baseTc
+            ? set.ResolveAssets(set.CostumeOid(baseTc)).BaseKtid : tgtAssets.BaseKtid;
+        if (srcBaseKtid != 0 && set.Ce.Find(tgtAssets.TbcObj) is { } tbc)
+            tbc.SetU32(Doa6SingletonSet.P_Tbc_Ktid, srcBaseKtid);
         set.MarkDirty(Doa6SingletonSet.CeFk);
 
         // 2) 텍스처 파일 신규등록(@이름 → g1t FK, 한 번씩만)
@@ -70,23 +77,25 @@ public static class CostumeAuthorInstaller
         var templateMat = mod.MaterialTemplateCostume is { } tc
             ? set.ResolveMaterial(set.CostumeOid(tc)) : tgtMat;
         var tgtVar0 = TargetVar0Mbes(templateMat);
-        var matMbe = new uint[numMat][]; // matMbe[m][variation] = MBE oid
+        var matMbe = new uint[numMat][]; // matMbe[m][variation] = MBE oid (0 = base 폴백)
         for (int m = 0; m < numMat; m++)
         {
             uint template = tgtVar0[Math.Min(m, tgtVar0.Length - 1)];
             var mat = mod.Materials[m];
-            int variations = mat.VariationAffecting ? M : 1;
+            int variations = Math.Max(1, mat.Slots.Count);
             matMbe[m] = new uint[variations];
             for (int v = 0; v < variations; v++)
             {
-                var slotMap = ResolveSlots(mat.Slots[v], texFk);
-                var chain = MaterialChainFactory.Create(set, template, slotMap, requireAllSlots: mod.RequireAllSlots);
+                // null 변형 = base 폴백 → MBE 생성 안 함(MI=0). base ktid 로 렌더.
+                if (mat.Slots[v] is not { } slots) { matMbe[m][v] = 0; continue; }
+                var chain = MaterialChainFactory.Create(set, template, ResolveSlots(slots, texFk),
+                                                        requireAllSlots: mod.RequireAllSlots);
                 matMbe[m][v] = chain.MbeOid;
                 newAssets.AddRange(chain.NewAssets);
             }
         }
 
-        // 4) MI 행렬(numMat × 타겟 변형수, 클램프) + MRNH + nameArr 배선
+        // 4) MI 행렬(numMat × 타겟 변형수, 클램프; 0=base 폴백) + MRNH + nameArr 배선
         int tgtCvn = Math.Max(1, tgtMat.Cvn);
         var mi = new uint[numMat * tgtCvn];
         for (int v = 0; v < tgtCvn; v++)
@@ -95,8 +104,9 @@ public static class CostumeAuthorInstaller
                 var perVar = matMbe[m];
                 mi[v * numMat + m] = perVar[Math.Min(v, perVar.Length - 1)];
             }
+        // MRNH = (name_hash, 베이스 MBE) 쌍. 베이스 = var0(없으면 첫 비-0 변형).
         var mrnh = new uint[numMat * 2];
-        for (int m = 0; m < numMat; m++) { mrnh[m * 2] = nameHashes[m]; mrnh[m * 2 + 1] = matMbe[m][0]; }
+        for (int m = 0; m < numMat; m++) { mrnh[m * 2] = nameHashes[m]; mrnh[m * 2 + 1] = FirstNonZero(matMbe[m]); }
 
         var motor = set.MotorChar(tgt);
         motor.SetU32Array(Doa6SingletonSet.P_Mc_NameArr, nameHashes);
@@ -114,6 +124,13 @@ public static class CostumeAuthorInstaller
         var arr = new uint[sc];
         for (int s = 0; s < sc && s < m.Mi.Length; s++) arr[s] = m.Mi[s];
         return arr;
+    }
+
+    /// <summary>배열의 첫 비-0 값(=베이스 변형 MBE). 전부 0이면 0.</summary>
+    private static uint FirstNonZero(uint[] arr)
+    {
+        foreach (var v in arr) if (v != 0) return v;
+        return 0;
     }
 
     private static Dictionary<int, uint> ResolveSlots(IReadOnlyDictionary<int, string> slots, Dictionary<string, uint> texFk)
