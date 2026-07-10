@@ -14,13 +14,18 @@ public static class CostumeAuthorInstaller
     /// <summary>한 재질의 저작 정의. 변형별 (텍스처 슬롯 인덱스 → @텍스처 이름).</summary>
     public sealed record AuthoredMaterial(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>> Slots);
 
-    /// <summary>저작 코스튬 입력. 텍스처는 @이름 → g1t 바이트로 전달(모드 파일에서 로드).</summary>
+    /// <summary>
+    /// 저작 코스튬 입력. 텍스처는 @이름 → g1t 바이트로 전달(모드 파일에서 로드).
+    /// RequireAllSlots=true 면 재질마다 템플릿 MBE 의 전 텍스처 슬롯을 지정해야 함(누락 시 예외).
+    /// false(기본)면 미지정 슬롯은 타겟 원본 텍스처를 상속(g1m 임포트 베이스라인 등).
+    /// </summary>
     public sealed record AuthoredCostume(
         string TargetCostume,
         byte[] G1m, byte[] Grp, byte[] Mtl,
         int VariationCount,
         IReadOnlyList<AuthoredMaterial> Materials,
-        IReadOnlyDictionary<string, byte[]> TextureFiles);
+        IReadOnlyDictionary<string, byte[]> TextureFiles,
+        bool RequireAllSlots = false);
 
     /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 목록을 반환(누적 가능).</summary>
     public static IReadOnlyList<CostumeOverride.NewAsset> Apply(Doa6SingletonSet set, AuthoredCostume mod)
@@ -69,7 +74,7 @@ public static class CostumeAuthorInstaller
             for (int v = 0; v < variations; v++)
             {
                 var slotMap = ResolveSlots(mat.Slots[v], texFk);
-                var chain = MaterialChainFactory.Create(set, template, slotMap, requireAllSlots: true);
+                var chain = MaterialChainFactory.Create(set, template, slotMap, requireAllSlots: mod.RequireAllSlots);
                 matMbe[m][v] = chain.MbeOid;
                 newAssets.AddRange(chain.NewAssets);
             }

@@ -26,7 +26,32 @@
 
             <!-- Content: 파일 관리자 + 메타 미리보기 -->
             <TabItem Header="Content">
-                <Grid ColumnDefinitions="*,320" ColumnSpacing="14" Margin="0,10,0,0">
+              <DockPanel Margin="0,10,0,0">
+                <Expander DockPanel.Dock="Top" Header="＋ New costume from g1m" Margin="0,0,0,10">
+                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
+                          Margin="8" ColumnSpacing="8" RowSpacing="6">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Set name" VerticalAlignment="Center"
+                                   Foreground="{StaticResource KashiraTextDim}"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding NewSetName}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Target costume" VerticalAlignment="Center"
+                                   Foreground="{StaticResource KashiraTextDim}"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding NewTargetCostume}"
+                                 PlaceholderText="e.g. KAS_COS_006"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="g1m" VerticalAlignment="Center"
+                                   Foreground="{StaticResource KashiraTextDim}"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding G1mPath}" IsReadOnly="True"/>
+                        <Button Grid.Row="2" Grid.Column="2" Content="Pick g1m…" Command="{Binding PickG1mCommand}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="grp (optional)" VerticalAlignment="Center"
+                                   Foreground="{StaticResource KashiraTextDim}"/>
+                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding GrpPath}" IsReadOnly="True"/>
+                        <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                            <Button Content="Pick grp…" Command="{Binding PickGrpCommand}"/>
+                            <Button Content="Generate" Classes="accent" Command="{Binding GenerateCostumeCommand}"/>
+                        </StackPanel>
+                    </Grid>
+                </Expander>
+
+                <Grid ColumnDefinitions="*,320" ColumnSpacing="14">
                     <TreeView Grid.Column="0" ItemsSource="{Binding ContentTree}"
                               SelectedItem="{Binding SelectedNode}"
                               Background="{StaticResource KashiraPanel}">
@@ -61,6 +86,7 @@
                         </DockPanel>
                     </Border>
                 </Grid>
+              </DockPanel>
             </TabItem>
 
             <!-- Content_Legacy: raw 파일 목록 + 폴더 열기 -->

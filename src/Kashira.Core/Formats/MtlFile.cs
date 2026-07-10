@@ -49,4 +49,27 @@ public sealed class MtlFile
 
     /// <summary>Names 순서의 name_hash 배열(nameArr 용).</summary>
     public uint[] NameHashes() => Names.Select(n => n.NameHash).ToArray();
+
+    /// <summary>
+    /// 베이스라인 mtl 생성(g1m 임포트용). num_names = numMat, 재질 i당 이름 1개(1:1 커버),
+    /// name_hash = i+1 (합성값 — 인게임 검증: name_hash 는 mtl/nameArr/MRNH 일치용 내부 키).
+    /// cloth/ponytail 없음.
+    /// </summary>
+    public static byte[] BuildBaseline(int numMat)
+    {
+        // 헤더(0x10) + names(각 12B: hash u32, count=1 u32, matid u32)
+        var buf = new byte[0x10 + numMat * 12];
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0), (uint)numMat);   // num_names
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(4), (uint)numMat);   // num_mat
+        // num_cloths=0, num_ponytails=0 (이미 0)
+        int off = 0x10;
+        for (int i = 0; i < numMat; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(off), (uint)(i + 1)); // name_hash
+            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(off + 4), 1u);        // count
+            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(off + 8), (uint)i);   // mat id
+            off += 12;
+        }
+        return buf;
+    }
 }

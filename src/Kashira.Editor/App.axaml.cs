@@ -18,6 +18,7 @@ public partial class App : Application
             var window = new MainWindow { DataContext = shell };
             shell.FolderPicker = window.PickFolderAsync;
             shell.ProjectPicker = window.PickProjectAsync;
+            shell.FilePicker = window.PickFileAsync;
             shell.Initialize();
             desktop.MainWindow = window;
         }

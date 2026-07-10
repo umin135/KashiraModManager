@@ -12,11 +12,15 @@ public partial class EditorShellViewModel : ViewModelBase
     [ObservableProperty]
     private ViewModelBase _currentPage;
 
+    /// <summary>View 가 확장자 필터 파일 선택기를 주입(g1m/grp 등). (title, ext) → 경로.</summary>
+    public Func<string, string, Task<string?>>? FilePicker { get; set; }
+
     public EditorShellViewModel()
     {
         _launcher = new ProjectLauncherViewModel
         {
-            OpenProject = project => CurrentPage = new ProjectWorkspaceViewModel(project, GoToLauncher),
+            OpenProject = project =>
+                CurrentPage = new ProjectWorkspaceViewModel(project, GoToLauncher, FilePicker),
         };
         _currentPage = _launcher;
     }

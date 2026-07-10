@@ -209,6 +209,12 @@ public sealed class KtmodPackage
         var mtl = Resolve(m.Mesh.Mtl);
         if (g1m is null || grp is null || mtl is null) return null;
 
+        // grp/mtl 은 JSON-first: .json 이면 설치 시 raw 바이너리로 변환
+        if (m.Mesh.Grp!.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            grp = Formats.GrpDoc.FromJson(System.Text.Encoding.UTF8.GetString(grp)).ToBinary();
+        if (m.Mesh.Mtl!.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            mtl = Formats.MtlDoc.FromJson(System.Text.Encoding.UTF8.GetString(mtl)).ToBinary();
+
         // 재질 스펙 → 설치 재질 + 참조된 텍스처 수집
         var texFiles = new Dictionary<string, byte[]>();
         var mats = new List<Doa6.CostumeAuthorInstaller.AuthoredMaterial>();
@@ -239,7 +245,7 @@ public sealed class KtmodPackage
             int ci = Array.FindIndex(segs, s => s.Equals("Content", StringComparison.OrdinalIgnoreCase));
             if (ci < 0 || ci >= segs.Length - 1) continue;                 // Content 아래 아님
             var leaf = segs[^1];
-            if (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue; // 매니페스트 제외
+            if (IsContentManifest(e.FullName)) continue;                    // 매니페스트만 제외(.mtl.json 등 에셋은 포함)
             map[leaf] = e;                                                  // leaf 유일성 가정
         }
         return map;

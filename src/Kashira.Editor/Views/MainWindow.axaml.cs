@@ -25,6 +25,23 @@ public partial class MainWindow : Window
         return result.FirstOrDefault()?.TryGetLocalPath();
     }
 
+    /// <summary>확장자 필터 파일 선택기(예: g1m/grp). 취소 시 null.</summary>
+    public async Task<string?> PickFileAsync(string title, string ext)
+    {
+        var top = GetTopLevel(this);
+        if (top is null) return null;
+        var result = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType(ext.ToUpperInvariant()) { Patterns = new[] { "*." + ext } },
+            },
+        });
+        return result.FirstOrDefault()?.TryGetLocalPath();
+    }
+
     /// <summary>프로젝트 열기 선택기(.ktproj 파일 선택). 취소 시 null.</summary>
     public async Task<string?> PickProjectAsync()
     {

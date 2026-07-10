@@ -76,6 +76,22 @@ public static class ProjectContent
 
     private static void InspectJson(string path, List<MetaLine> lines)
     {
+        var name = Path.GetFileName(path);
+        if (name.EndsWith(".mtl.json", StringComparison.OrdinalIgnoreCase))
+        {
+            var d = MtlDoc.FromJson(File.ReadAllText(path));
+            lines.Add(new("Kind", "mtl (JSON)"));
+            lines.Add(new("Materials(names)", d.Names.Count.ToString()));
+            lines.Add(new("g1m palette(num_mat)", d.NumMat.ToString()));
+            return;
+        }
+        if (name.EndsWith(".grp.json", StringComparison.OrdinalIgnoreCase))
+        {
+            var d = GrpDoc.FromJson(File.ReadAllText(path));
+            lines.Add(new("Kind", "grp (JSON)"));
+            lines.Add(new("Parts", d.Entries.Count.ToString()));
+            return;
+        }
         var cm = CostumeManifest.Parse(File.ReadAllText(path));
         if (cm is null) { lines.Add(new("Manifest", "코스튬 매니페스트 아님")); return; }
         lines.Add(new("ModType", cm.ModType));
