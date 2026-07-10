@@ -19,9 +19,15 @@ public sealed class MtlFile
     /// <summary>재질 이름별 (name_hash, 커버하는 g1m 재질 인덱스들). Names 순서 유지.</summary>
     public IReadOnlyList<(uint NameHash, int[] MatIds)> Names { get; }
 
-    private MtlFile(int nn, int nm, int nc, int np, List<(uint, int[])> names)
+    /// <summary>Cloth/Ponytail 섹션 (src, dst) 쌍들.</summary>
+    public IReadOnlyList<(uint Src, uint Dst)> Cloths { get; }
+    public IReadOnlyList<(uint Src, uint Dst)> Ponytails { get; }
+
+    private MtlFile(int nn, int nm, int nc, int np, List<(uint, int[])> names,
+                    List<(uint, uint)> cloths, List<(uint, uint)> ponytails)
     {
-        NumNames = nn; NumMat = nm; NumCloths = nc; NumPonytails = np; Names = names;
+        NumNames = nn; NumMat = nm; NumCloths = nc; NumPonytails = np;
+        Names = names; Cloths = cloths; Ponytails = ponytails;
     }
 
     public static MtlFile Parse(ReadOnlySpan<byte> d)
@@ -44,7 +50,21 @@ public sealed class MtlFile
             off += count * 4;
             names.Add((hash, ids));
         }
-        return new MtlFile(nn, nm, nc, np, names);
+        var cloths = new List<(uint, uint)>(nc);
+        for (int i = 0; i < nc; i++)
+        {
+            cloths.Add((BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(off)),
+                        BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(off + 4))));
+            off += 8;
+        }
+        var pony = new List<(uint, uint)>(np);
+        for (int i = 0; i < np; i++)
+        {
+            pony.Add((BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(off)),
+                      BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(off + 4))));
+            off += 8;
+        }
+        return new MtlFile(nn, nm, nc, np, names, cloths, pony);
     }
 
     /// <summary>Names 순서의 name_hash 배열(nameArr 용).</summary>

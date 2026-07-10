@@ -4,8 +4,10 @@ namespace Kashira.Core.Doa6;
 
 /// <summary>
 /// 코스튬 → 코스튬 전체 오버라이드(소스의 메시/재질 체인을 타겟 코스튬에 덮어씀).
-/// 검증된 엔드투엔드 레시피(메모리 ktmod-content-symbolic-design, KAS_COS_002→004):
-///   - 소스 g1m/mtl/grp 를 새 FileKtid 로 신규등록 후 타겟 DM repoint (기존 FK 재사용 금지)
+/// 온라인 안전 규칙(실측 확정 2026-07-11, 메모리 online-safe-patch-method):
+///   - **g1m 은 새 FK 금지**(온라인이 로드 모델 FK 를 canonical rdb 와 대조검증 → 새 FK = 디싱크 크래시).
+///     타겟 canonical g1m FK 에 소스 메시를 in-place 로 덮는다(raw redirect). DM.g1m 포인터는 그대로.
+///   - mtl/grp 는 온라인 미검증(test#3) → 새 FK 로 신규등록 후 타겟 DM repoint (안전).
 ///   - 타겟 DM 의 TBC(base ktid) → 소스 base ktid FK repoint (기존참조 OK)
 ///   - 타겟 CE1MotorChar 의 name 배열(0xCEE5DDAE)·MRNH(0x34CF9E5C) → 소스값(소스 MBE 참조)
 ///   - 타겟 CharacterSetting MI 배열 → 소스 MBE(변형 클램프 매핑), oidex/rigbin 은 타겟 유지
@@ -30,18 +32,19 @@ public static class CostumeOverride
         var srcMat = set.ResolveMaterial(src);
         var tgtMat = set.ResolveMaterial(tgt);
 
-        // 1) 소스 g1m/mtl/grp 를 새 FK 로 신규등록(설치 전역 공유 할당기)
-        uint fkG1m = set.AllocFk(), fkMtl = set.AllocFk(), fkGrp = set.AllocFk();
+        // 1) 에셋 배선:
+        //    - g1m: 타겟 canonical FK 로 넘긴다 → PatchEngine 이 기존 FK 로 인식해 in-place redirect(온라인 안전).
+        //    - mtl/grp: 새 FK 로 신규등록(온라인 미검증 → 안전, 설치 전역 공유 할당기).
+        uint fkMtl = set.AllocFk(), fkGrp = set.AllocFk();
         var newAssets = new List<NewAsset>
         {
-            new(fkG1m, Require(set, srcAssets.G1m, "g1m"), "g1m"),
+            new(tgtAssets.G1m, Require(set, srcAssets.G1m, "g1m"), "g1m"), // 기존 FK → redirect
             new(fkMtl, Require(set, srcAssets.Mtl, "mtl"), "mtl"),
             new(fkGrp, Require(set, srcAssets.Grp, "grp"), "grp"),
         };
 
-        // 2) 타겟 DM repoint (g1m/mtl/grp → 신규, base ktid → 소스)
+        // 2) 타겟 DM repoint (mtl/grp → 신규, base ktid → 소스). g1m 은 canonical FK 유지(내용만 raw 교체됨).
         var dm = set.DisplaysetModel(tgt);
-        dm.SetU32(Doa6SingletonSet.P_Dm_G1m, fkG1m);
         dm.SetU32(Doa6SingletonSet.P_Dm_Mtl, fkMtl);
         dm.SetU32(Doa6SingletonSet.P_Dm_Grp, fkGrp);
         var tbc = set.Ce.Find(tgtAssets.TbcObj)

@@ -232,7 +232,8 @@ public sealed class KtmodPackage
         }
 
         return new Doa6.CostumeAuthorInstaller.AuthoredCostume(
-            m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles);
+            m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles,
+            RequireAllSlots: false, MaterialTemplateCostume: m.MaterialTemplate);
     }
 
     /// <summary>Content/ 아래 모든 비-json 파일을 leaf 파일명 → 엔트리로(@참조 전역 스코프).</summary>

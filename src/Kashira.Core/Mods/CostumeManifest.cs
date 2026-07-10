@@ -14,7 +14,8 @@ public sealed record CostumeManifest(
     string? SourceCostume,
     MeshRefs? Mesh,
     int VariationCount,
-    IReadOnlyList<MaterialSpec> Materials)
+    IReadOnlyList<MaterialSpec> Materials,
+    string? MaterialTemplate = null)
 {
     public bool IsSwap => !string.IsNullOrWhiteSpace(SourceCostume);
     public bool IsAuthored => Mesh is not null && Materials.Count > 0;
@@ -44,7 +45,8 @@ public sealed record CostumeManifest(
                 foreach (var mat in mats.EnumerateArray())
                     if (ParseMaterial(mat) is { } spec) materials.Add(spec);
 
-            return new CostumeManifest(modType, target!, Str(root, "SourceCostume"), mesh, varCount, materials);
+            return new CostumeManifest(modType, target!, Str(root, "SourceCostume"), mesh, varCount, materials,
+                Str(root, "MaterialTemplate"));
         }
         catch { return null; }
     }

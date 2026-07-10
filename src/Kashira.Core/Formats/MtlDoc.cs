@@ -44,6 +44,8 @@ public sealed class MtlDoc
         var doc = new MtlDoc { NumMat = m.NumMat };
         foreach (var (hash, mats) in m.Names)
             doc.Names.Add(new NameEntry { Hash = Hex(hash), MatIds = mats.ToList() });
+        foreach (var (src, dst) in m.Cloths) doc.Cloths.Add(new Pair { Src = src, Dst = dst });
+        foreach (var (src, dst) in m.Ponytails) doc.Ponytails.Add(new Pair { Src = src, Dst = dst });
         return doc;
     }
 

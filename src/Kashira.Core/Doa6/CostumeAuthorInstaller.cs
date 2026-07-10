@@ -25,13 +25,15 @@ public static class CostumeAuthorInstaller
         int VariationCount,
         IReadOnlyList<AuthoredMaterial> Materials,
         IReadOnlyDictionary<string, byte[]> TextureFiles,
-        bool RequireAllSlots = false);
+        bool RequireAllSlots = false,
+        string? MaterialTemplateCostume = null);
 
     /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 목록을 반환(누적 가능).</summary>
     public static IReadOnlyList<CostumeOverride.NewAsset> Apply(Doa6SingletonSet set, AuthoredCostume mod)
     {
         uint tgt = set.CostumeOid(mod.TargetCostume);
         var tgtMat = set.ResolveMaterial(tgt);
+        var tgtAssets = set.ResolveAssets(tgt);
 
         var mtl = MtlFile.Parse(mod.Mtl);
         if (mod.Materials.Count != mtl.NumNames)
@@ -42,13 +44,14 @@ public static class CostumeAuthorInstaller
 
         var newAssets = new List<CostumeOverride.NewAsset>();
 
-        // 1) mod g1m/grp/mtl 신규등록 + 타겟 DM repoint
-        uint fkG1m = set.AllocFk(), fkGrp = set.AllocFk(), fkMtl = set.AllocFk();
-        newAssets.Add(new(fkG1m, mod.G1m, "g1m"));
+        // 1) 에셋 배선:
+        //    - g1m: 새 FK 금지(온라인 검증) → 타겟 canonical g1m FK 에 mod 메시 in-place 교체(raw redirect). DM.g1m 유지.
+        //    - grp/mtl: 새 FK 신규등록 + DM repoint (온라인 미검증 → 안전).
+        uint fkGrp = set.AllocFk(), fkMtl = set.AllocFk();
+        newAssets.Add(new(tgtAssets.G1m, mod.G1m, "g1m")); // 기존 FK → redirect
         newAssets.Add(new(fkGrp, mod.Grp, "grp"));
         newAssets.Add(new(fkMtl, mod.Mtl, "mtl"));
         var dm = set.DisplaysetModel(tgt);
-        dm.SetU32(Doa6SingletonSet.P_Dm_G1m, fkG1m);
         dm.SetU32(Doa6SingletonSet.P_Dm_Grp, fkGrp);
         dm.SetU32(Doa6SingletonSet.P_Dm_Mtl, fkMtl);
         set.MarkDirty(Doa6SingletonSet.CeFk);
@@ -62,8 +65,11 @@ public static class CostumeAuthorInstaller
             newAssets.Add(new(fk, bytes, "g1t"));
         }
 
-        // 3) 재질별 MBE 체인 생성(변형별). 템플릿 = 타겟의 var0 MBE(구조 상속).
-        var tgtVar0 = TargetVar0Mbes(tgtMat);
+        // 3) 재질별 MBE 체인 생성(변형별). 템플릿 = MaterialTemplateCostume(있으면, 예: 번들 소스 코스튬)
+        //    또는 타겟의 var0 MBE. 소스 템플릿을 쓰면 소스의 KTS/슬롯 레이아웃이 보존돼 슬롯 밀림이 없다.
+        var templateMat = mod.MaterialTemplateCostume is { } tc
+            ? set.ResolveMaterial(set.CostumeOid(tc)) : tgtMat;
+        var tgtVar0 = TargetVar0Mbes(templateMat);
         var matMbe = new uint[numMat][]; // matMbe[m][variation] = MBE oid
         for (int m = 0; m < numMat; m++)
         {
