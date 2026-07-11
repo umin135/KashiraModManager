@@ -36,5 +36,15 @@
         <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{StaticResource KashiraAccentHover}"/>
         </Style>
+
+        <!-- 재질 그리드 셀 버튼(플랫) -->
+        <Style Selector="Button.cell">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button.cell:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource KashiraPanelHi}"/>
+        </Style>
     </Application.Styles>
 </Application>

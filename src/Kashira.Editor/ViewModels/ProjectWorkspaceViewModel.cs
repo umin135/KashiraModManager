@@ -60,6 +60,11 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     public ObservableCollection<GridMaterialVM> GridMaterials { get; } = new();
     [ObservableProperty] private GridMaterialVM? _selectedGridMaterial;
     [ObservableProperty] private bool _hasGrid;
+    private string? _currentManifestPath;
+
+    // 그리드 셀 편집(Phase 3b)
+    [ObservableProperty] private GridCellVM? _selectedCell;
+    [ObservableProperty] private string _selectedCellInfo = "셀을 클릭해 선택하세요.";
 
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _gameStatus = "";
@@ -218,7 +223,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool TryBuildGrid(string manifestPath)
+    private bool TryBuildGrid(string manifestPath, int keepMaterial = int.MinValue)
     {
         CostumeGrid.Model? model;
         try { model = CostumeGrid.Build(_project, manifestPath); }
@@ -228,9 +233,78 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         GridMaterials.Clear();
         if (model.BaseForm is not null) GridMaterials.Add(new GridMaterialVM(model.BaseForm));
         foreach (var m in model.Materials) GridMaterials.Add(new GridMaterialVM(m));
-        SelectedGridMaterial = GridMaterials.Count > 0 ? GridMaterials[0] : null;
+
+        SelectedGridMaterial = GridMaterials.FirstOrDefault(g => g.MaterialIndex == keepMaterial)
+                               ?? (GridMaterials.Count > 0 ? GridMaterials[0] : null);
         HasGrid = GridMaterials.Count > 0;
+        _currentManifestPath = HasGrid ? manifestPath : null;
         return HasGrid;
+    }
+
+    /// <summary>코드비하인드가 셀 클릭 시 호출. 이전 선택 해제 후 새 셀 선택.</summary>
+    public void SelectCell(GridCellVM? cell)
+    {
+        if (SelectedCell is not null) SelectedCell.IsSelected = false;
+        SelectedCell = cell;
+        if (cell is null) { SelectedCellInfo = "셀을 클릭해 선택하세요."; return; }
+        cell.IsSelected = true;
+        string mat = cell.MaterialIndex < 0 ? "Base" : $"Material {cell.MaterialIndex}";
+        string col = cell.MaterialIndex < 0 ? "base" : $"var{cell.Column}";
+        SelectedCellInfo = $"{mat} · {col} · {cell.Role} (cat{cell.Category})";
+    }
+
+    [RelayCommand]
+    private void AssignSelectedCell()
+    {
+        if (_currentManifestPath is null || SelectedCell is null) { Status = "먼저 그리드 셀을 선택하세요."; return; }
+        if (SelectedAsset is null || !SelectedAsset.Ext.Equals("g1t", StringComparison.OrdinalIgnoreCase)
+            || SelectedAsset.Root != "Content")
+        {
+            Status = "Content 브라우저에서 배정할 g1t(Content) 를 먼저 선택하세요.";
+            return;
+        }
+        var cell = SelectedCell;
+        string atRef = "@" + SelectedAsset.Name;
+        try
+        {
+            if (cell.MaterialIndex < 0)
+                CostumeManifestEditor.SetBaseSlot(_currentManifestPath, cell.Category, atRef);
+            else
+                CostumeManifestEditor.SetMaterialSlot(_currentManifestPath, cell.MaterialIndex, cell.Column, cell.Category, atRef);
+            RebuildAfterEdit(cell);
+            Status = $"배정: {cell.Role} ← {SelectedAsset.Name}";
+        }
+        catch (Exception ex) { Status = $"배정 실패: {ex.Message}"; }
+    }
+
+    [RelayCommand]
+    private void ClearSelectedCell()
+    {
+        if (_currentManifestPath is null || SelectedCell is null) { Status = "먼저 그리드 셀을 선택하세요."; return; }
+        var cell = SelectedCell;
+        if (cell.Inherited) { Status = "상속 셀은 지울 것이 없습니다."; return; }
+        try
+        {
+            if (cell.MaterialIndex < 0)
+                CostumeManifestEditor.SetBaseSlot(_currentManifestPath, cell.Category, null);
+            else
+                CostumeManifestEditor.SetMaterialSlot(_currentManifestPath, cell.MaterialIndex, cell.Column, cell.Category, null);
+            RebuildAfterEdit(cell);
+            Status = $"지움: {cell.Role}";
+        }
+        catch (Exception ex) { Status = $"지우기 실패: {ex.Message}"; }
+    }
+
+    /// <summary>편집 후 그리드 재빌드 + 같은 좌표 셀 재선택.</summary>
+    private void RebuildAfterEdit(GridCellVM edited)
+    {
+        int mat = edited.MaterialIndex, col = edited.Column, cat = edited.Category;
+        if (_currentManifestPath is null) return;
+        TryBuildGrid(_currentManifestPath, keepMaterial: mat);
+        var reCell = SelectedGridMaterial?.Rows
+            .FirstOrDefault(r => r.Category == cat)?.Cells
+            .FirstOrDefault(c => c.Column == col);
+        SelectCell(reCell);
     }
 
     private void ClearViewport()
@@ -241,6 +315,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         GridMaterials.Clear();
         SelectedGridMaterial = null;
         HasGrid = false;
+        _currentManifestPath = null;
+        SelectedCell = null;
+        SelectedCellInfo = "셀을 클릭해 선택하세요.";
     }
 
     private void PopulateMetadata(string path)

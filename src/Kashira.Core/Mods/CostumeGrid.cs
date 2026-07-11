@@ -10,9 +10,10 @@ namespace Kashira.Core.Mods;
 /// </summary>
 public static class CostumeGrid
 {
-    public sealed record Cell(int Category, string Role, string? AtRef, string? FileName, string? FullPath, bool Inherited);
+    public sealed record Cell(int Category, string Role, int Column, string? AtRef, string? FileName, string? FullPath, bool Inherited);
     public sealed record Row(int Category, string Role, IReadOnlyList<Cell> Cells);
-    public sealed record Material(string Name, int ColumnCount, IReadOnlyList<string> ColumnHeaders, IReadOnlyList<Row> Rows);
+    /// <summary>Index: 재질 인덱스(0..). Base form 은 -1(BaseKtid 편집 대상).</summary>
+    public sealed record Material(int Index, string Name, int ColumnCount, IReadOnlyList<string> ColumnHeaders, IReadOnlyList<Row> Rows);
     public sealed record Model(string SetName, int VariationCount, Material? BaseForm, IReadOnlyList<Material> Materials);
 
     /// <summary>매니페스트 파일 경로(Content/&lt;set&gt;.json) → 그리드 모델. 저작 매니페스트가 아니면 null.</summary>
@@ -33,9 +34,9 @@ public static class CostumeGrid
             {
                 cm.BaseKtid.TryGetValue(cat, out var atRef);
                 rows.Add(new Row(cat, ShaderCategory.RoleName(cat),
-                    new[] { MakeCell(cat, atRef, index, inherited: false) }));
+                    new[] { MakeCell(cat, 0, atRef, index, inherited: false) }));
             }
-            baseForm = new Material("Base form", 1, new[] { "base" }, rows);
+            baseForm = new Material(-1, "Base form", 1, new[] { "base" }, rows);
         }
 
         // 재질별 변형 그리드
@@ -59,12 +60,12 @@ public static class CostumeGrid
                     if (v is null)
                     {
                         // 변형 상속(base 폴백) — 참조 없음
-                        cells.Add(new Cell(cat, ShaderCategory.RoleName(cat), null, null, null, Inherited: true));
+                        cells.Add(new Cell(cat, ShaderCategory.RoleName(cat), c, null, null, null, Inherited: true));
                     }
                     else
                     {
                         v.TryGetValue(cat, out var atRef);
-                        cells.Add(MakeCell(cat, atRef, index, inherited: false));
+                        cells.Add(MakeCell(cat, c, atRef, index, inherited: false));
                     }
                 }
                 rows.Add(new Row(cat, ShaderCategory.RoleName(cat), cells));
@@ -72,19 +73,19 @@ public static class CostumeGrid
 
             var headers = new List<string>(cols);
             for (int c = 0; c < cols; c++) headers.Add($"var{c}");
-            materials.Add(new Material($"Material {m}", cols, headers, rows));
+            materials.Add(new Material(m, $"Material {m}", cols, headers, rows));
         }
 
         return new Model(setName, cm.VariationCount, baseForm, materials);
     }
 
-    private static Cell MakeCell(int cat, string? atRef, IReadOnlyDictionary<string, string> index, bool inherited)
+    private static Cell MakeCell(int cat, int column, string? atRef, IReadOnlyDictionary<string, string> index, bool inherited)
     {
         if (string.IsNullOrEmpty(atRef))
-            return new Cell(cat, ShaderCategory.RoleName(cat), null, null, null, inherited);
+            return new Cell(cat, ShaderCategory.RoleName(cat), column, null, null, null, inherited);
         string fileName = atRef.TrimStart('@');
         index.TryGetValue(fileName, out var full);
-        return new Cell(cat, ShaderCategory.RoleName(cat), atRef, fileName, full, inherited);
+        return new Cell(cat, ShaderCategory.RoleName(cat), column, atRef, fileName, full, inherited);
     }
 
     /// <summary>Content/ 하위 파일명 → 절대경로(중복은 첫 항목).</summary>

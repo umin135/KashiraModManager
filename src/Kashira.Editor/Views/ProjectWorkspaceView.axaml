@@ -100,18 +100,38 @@
                         <Grid>
                             <!-- 재질 × 변형 × 카테고리 그리드 -->
                             <DockPanel IsVisible="{Binding HasGrid}" Margin="12">
-                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10"
-                                            Margin="0,0,0,10" VerticalAlignment="Center">
-                                    <TextBlock Text="Material" VerticalAlignment="Center"
-                                               Foreground="{StaticResource KashiraTextDim}"/>
-                                    <ComboBox ItemsSource="{Binding GridMaterials}"
-                                              SelectedItem="{Binding SelectedGridMaterial}" MinWidth="160">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:GridMaterialVM">
-                                                <TextBlock Text="{Binding Name}"/>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
+                                <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <TextBlock Text="Material" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource KashiraTextDim}"/>
+                                        <ComboBox ItemsSource="{Binding GridMaterials}"
+                                                  SelectedItem="{Binding SelectedGridMaterial}" MinWidth="160">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:GridMaterialVM">
+                                                    <TextBlock Text="{Binding Name}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <Border Background="#5a2d2d" CornerRadius="3" Padding="8,3"
+                                                IsVisible="{Binding SelectedGridMaterial.MissingAlbedo}">
+                                            <TextBlock Text="⚠ albedo 누락" Foreground="#ffb3a7"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <!-- 셀 편집 패널 -->
+                                    <Border Background="{StaticResource KashiraBg}" CornerRadius="4" Padding="10,7">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding SelectedCellInfo}"
+                                                           Foreground="{StaticResource KashiraText}"/>
+                                                <TextBlock Foreground="{StaticResource KashiraTextDim}" FontSize="11"
+                                                           Text="Content 브라우저에서 g1t 선택 후 '배정'"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="배정" Classes="accent"
+                                                    Command="{Binding AssignSelectedCellCommand}"/>
+                                            <Button Grid.Column="2" Content="지우기"
+                                                    Command="{Binding ClearSelectedCellCommand}"/>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
 
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
@@ -151,18 +171,21 @@
                                                             </ItemsControl.ItemsPanel>
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate x:DataType="vm:GridCellVM">
-                                                                    <Border Width="96" Height="96" Margin="0,0,4,0"
-                                                                            Background="{StaticResource KashiraBg}" CornerRadius="4"
+                                                                    <Button Classes="cell" Click="OnCellClick"
+                                                                            Width="96" Height="96" Margin="0,0,4,0"
                                                                             ToolTip.Tip="{Binding Tooltip}">
                                                                         <Grid>
+                                                                            <Border Background="{StaticResource KashiraBg}" CornerRadius="4"/>
                                                                             <Image Source="{Binding Thumb}" Stretch="Uniform" Margin="4"
                                                                                    IsVisible="{Binding HasThumb}"
                                                                                    RenderOptions.BitmapInterpolationMode="HighQuality"/>
                                                                             <TextBlock Text="{Binding Glyph}" IsVisible="{Binding !HasThumb}"
                                                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                                        FontSize="20" Foreground="{StaticResource KashiraTextDim}"/>
+                                                                            <Border IsVisible="{Binding IsSelected}" CornerRadius="4"
+                                                                                    BorderBrush="{StaticResource KashiraAccent}" BorderThickness="3"/>
                                                                         </Grid>
-                                                                    </Border>
+                                                                    </Button>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
