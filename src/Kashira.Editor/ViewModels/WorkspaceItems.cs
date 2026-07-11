@@ -82,17 +82,21 @@ public sealed class SubmeshRowVM
 {
     public string Sub { get; }
     public string Vb { get; }
+    public string Vsize { get; }
     public string Mat { get; }
     public string Verts { get; }
     public string Tris { get; }
+    public string Cloth { get; }
 
     public SubmeshRowVM(G1mGeometry.Submesh s)
     {
         Sub = $"sub{s.Index}";
         Vb = $"vb{s.VbRef}";
+        Vsize = s.Vsize.ToString();
         Mat = $"mat{s.Material}";
         Verts = s.NumVerts.ToString("N0");
         Tris = s.Tris.ToString("N0");
+        Cloth = s.ClothId == 0 ? "" : $"cloth{s.ClothId}";
     }
 }
 

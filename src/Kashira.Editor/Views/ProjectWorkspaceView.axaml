@@ -180,23 +180,27 @@
 
                         <!-- 0x10008: 서브메시 분석(읽기 전용) -->
                         <DockPanel IsVisible="{Binding HasSubmeshList}">
-                            <Grid DockPanel.Dock="Top" ColumnDefinitions="70,60,60,90,90" Margin="4,0,4,4">
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="64,52,54,52,84,84,72" Margin="4,0,4,4">
                                 <TextBlock Grid.Column="0" Text="Submesh" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
                                 <TextBlock Grid.Column="1" Text="VB" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
-                                <TextBlock Grid.Column="2" Text="Mat" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
-                                <TextBlock Grid.Column="3" Text="Verts" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
-                                <TextBlock Grid.Column="4" Text="Tris" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="2" Text="vsize" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="3" Text="Mat" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="4" Text="Verts" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="5" Text="Tris" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="6" Text="Cloth" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
                             </Grid>
                             <ScrollViewer>
                                 <ItemsControl ItemsSource="{Binding Submeshes}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SubmeshRowVM">
-                                            <Grid ColumnDefinitions="70,60,60,90,90" Margin="0,0,0,3">
+                                            <Grid ColumnDefinitions="64,52,54,52,84,84,72" Margin="0,0,0,3">
                                                 <TextBlock Grid.Column="0" Text="{Binding Sub}" Foreground="{StaticResource KashiraText}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding Vb}" Foreground="{StaticResource KashiraTextDim}"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding Mat}" Foreground="{StaticResource KashiraTextDim}"/>
-                                                <TextBlock Grid.Column="3" Text="{Binding Verts}" Foreground="{StaticResource KashiraText}"/>
-                                                <TextBlock Grid.Column="4" Text="{Binding Tris}" Foreground="{StaticResource KashiraText}"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Vsize}" Foreground="{StaticResource KashiraTextDim}"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding Mat}" Foreground="{StaticResource KashiraTextDim}"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding Verts}" Foreground="{StaticResource KashiraText}"/>
+                                                <TextBlock Grid.Column="5" Text="{Binding Tris}" Foreground="{StaticResource KashiraText}"/>
+                                                <TextBlock Grid.Column="6" Text="{Binding Cloth}" Foreground="#d8b26a"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

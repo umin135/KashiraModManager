@@ -252,9 +252,21 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
                         new("Size", Human(s.Inner.Length)),
                     };
                     if (s.Id == 0x10002)
-                        try { det.Add(new("Materials", G1mFile.Materials(bytes).Count.ToString())); } catch { }
-                    if (s.Id == G1mMaterialProps.SectionId)
+                        det.Add(new("Materials", geo.MaterialCount.ToString()));
+                    else if (s.Id == G1mMaterialProps.SectionId)
                         det.Add(new("편집", "재질 타입(nMtrID) 편집 가능"));
+                    else if (s.Id == 0x10004)
+                        foreach (var vb in geo.VertexBuffers)
+                            det.Add(new($"VB {vb.Index}", $"vsize {vb.VertexSize} · {vb.NumVerts:N0} verts · L{vb.Layout}"));
+                    else if (s.Id == 0x10005)
+                        foreach (var lay in geo.Layouts)
+                            det.Add(new($"L{lay.Index}", string.Join(" · ", lay.Semantics.Select(sm => sm.KindName))));
+                    else if (s.Id == 0x10007)
+                        foreach (var ib in geo.IndexBuffers)
+                            det.Add(new($"IB {ib.Index}", $"{ib.NumIndices:N0} idx · {ib.TypeName}"));
+                    else if (s.Id == 0x10006)
+                        for (int pi = 0; pi < geo.PaletteSizes.Count; pi++)
+                            det.Add(new($"Palette {pi}", $"{geo.PaletteSizes[pi]} bones"));
                     OutlinerSections.Add(new AssetSectionVM($"   · {G1mContainer.SectionName(s.Id)}", "file", det,
                         g1mSectionId: s.Id));
                 }
@@ -455,7 +467,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         try
         {
             var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
-            foreach (var s in G1mGeometry.ParseSubmeshes(c)) Submeshes.Add(new SubmeshRowVM(s));
+            foreach (var s in G1mGeometry.Analyze(c).Submeshes) Submeshes.Add(new SubmeshRowVM(s));
             HasSubmeshList = Submeshes.Count > 0;
         }
         catch { HasSubmeshList = false; }
