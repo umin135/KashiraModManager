@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Kashira.Core.Formats;
 using Kashira.Core.Mods;
 using Kashira.Editor.Services;
 
@@ -44,21 +47,82 @@ public sealed class BrowserItemVM
     }
 }
 
-/// <summary>Outliner "목차": 선택 에셋의 편집/열람 섹션. Material 이 있으면 뷰포트에 그 재질 그리드를 표시.</summary>
+/// <summary>Outliner "목차": 선택 에셋의 편집/열람 섹션. Material=재질 그리드, G1mSectionId=g1m 섹션 편집기.</summary>
 public sealed class AssetSectionVM
 {
     public string Title { get; }
     public string Icon { get; }
     public GridMaterialVM? Material { get; }
+    /// <summary>G1MG 서브섹션 id(예 0x10003). 그 외 null.</summary>
+    public uint? G1mSectionId { get; }
+    /// <summary>최상위 청크 인덱스(G1MF/G1MS/NUNO 등). 그 외 null.</summary>
+    public int? G1mChunkIndex { get; }
+    /// <summary>raw export/import 대상(로케이터가 있으면).</summary>
+    public bool IsG1mSection => G1mSectionId is not null || G1mChunkIndex is not null;
     public IReadOnlyList<ProjectContent.MetaLine> Details { get; }
 
     public AssetSectionVM(string title, string icon,
                           IReadOnlyList<ProjectContent.MetaLine> details,
-                          GridMaterialVM? material = null)
+                          GridMaterialVM? material = null, uint? g1mSectionId = null, int? g1mChunkIndex = null)
     {
         Title = title;
         Icon = icon;
         Details = details;
         Material = material;
+        G1mSectionId = g1mSectionId;
+        G1mChunkIndex = g1mChunkIndex;
+    }
+}
+
+/// <summary>nMtrID 선택지(값 + 라벨).</summary>
+public sealed record NMtrOption(int Value, string Label);
+
+/// <summary>서브메시 분석 한 행(읽기 전용).</summary>
+public sealed class SubmeshRowVM
+{
+    public string Sub { get; }
+    public string Vb { get; }
+    public string Mat { get; }
+    public string Verts { get; }
+    public string Tris { get; }
+
+    public SubmeshRowVM(G1mGeometry.Submesh s)
+    {
+        Sub = $"sub{s.Index}";
+        Vb = $"vb{s.VbRef}";
+        Mat = $"mat{s.Material}";
+        Verts = s.NumVerts.ToString("N0");
+        Tris = s.Tris.ToString("N0");
+    }
+}
+
+/// <summary>g1m 재질 하나의 타입(nMtrID) 편집 VM. 0x10003 PropertySet 편집기용.</summary>
+public sealed partial class G1mMaterialVM : ObservableObject
+{
+    public static readonly NMtrOption[] Known =
+    {
+        new(0, "0 · 기본 오파크"), new(1, "1 · SSS 피부"), new(2, "2 · 레이어드 웻"),
+        new(4, "4 · (미확정)"), new(6, "6 · 알파 컷아웃"), new(11, "11 · coeffs"),
+    };
+
+    public int Index { get; }
+    public string Name { get; }
+    public string Info { get; }
+    public IReadOnlyList<NMtrOption> Options { get; }
+    [ObservableProperty] private NMtrOption _selectedType;
+
+    public int SelectedValue => SelectedType.Value;
+
+    public G1mMaterialVM(G1mMaterialProps.MatProp p)
+    {
+        Index = p.Index;
+        Name = $"Material {p.Index}";
+        Info = (p.RmIndex is { } r ? $"rmIndex {r}" : "")
+             + (p.FThick is { } f ? $"  fThick {f:0.##}" : "");
+        var opts = new List<NMtrOption>(Known);
+        if (opts.All(o => o.Value != p.NMtrID))
+            opts.Insert(0, new NMtrOption(p.NMtrID, $"{p.NMtrID} · (미확정)"));
+        Options = opts;
+        _selectedType = opts.First(o => o.Value == p.NMtrID);
     }
 }

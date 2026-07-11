@@ -1,28 +1,31 @@
 namespace Kashira.Core.Doa6;
 
 /// <summary>
-/// DOA6 셰이더 텍스처 카테고리(KTS primary) → 역할명. 게임 전역 레지스트리(재질간 일관, 실측).
-/// 에디터 재질 그리드 행 라벨 등에 사용. 미확인 카테고리는 "cat{n}".
+/// DOA6 셰이더 텍스처 카테고리(KTS primary). **현재는 인덱스(카테고리 ID)로만 표시**한다.
+/// 이름 매핑(albedo/normal…)은 추정치이므로, 모더 기반으로 제대로 분석·검증된 뒤에 부여한다(아래 KnownNames 는 휴면 참조).
+/// 정렬도 이름 우선순위 대신 카테고리 ID 오름차순.
 /// </summary>
 public static class ShaderCategory
 {
-    private static readonly IReadOnlyDictionary<int, string> Roles = new Dictionary<int, string>
+    /// <summary>
+    /// (휴면) 추정 역할명 — 제대로 분석되기 전까지 표시에 사용하지 않는다. 확정 후 <see cref="Label"/> 에 연결.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<int, string> KnownNames = new Dictionary<int, string>
     {
         [1] = "albedo", [2] = "roughness", [3] = "normal", [5] = "occlusion",
         [37] = "shell", [41] = "air", [47] = "wetmask", [55] = "occ2", [62] = "s4m",
     };
 
-    /// <summary>행 정렬용 표준 순서(중요도 순). 목록 밖 카테고리는 뒤에 오름차순.</summary>
-    private static readonly int[] Order = { 1, 3, 2, 5, 55, 37, 41, 47, 62 };
+    /// <summary>표시 라벨 = 카테고리 인덱스(예: "cat 1"). 이름 확정 전까지 인덱스만.</summary>
+    public static string Label(int category) => $"cat {category}";
 
-    public static string RoleName(int category) =>
-        Roles.TryGetValue(category, out var r) ? r : $"cat{category}";
+    /// <summary>(휴면) 확정 전 참조용 추정 이름. 표시엔 사용하지 않음 — 분석 후 <see cref="Label"/> 에 연결 예정.</summary>
+    public static string? KnownName(int category) => KnownNames.TryGetValue(category, out var n) ? n : null;
 
-    /// <summary>카테고리 집합을 표준 역할 순서로 정렬(미등록은 뒤, 오름차순).</summary>
+    /// <summary>구버전 호환 별칭. 현재는 인덱스 라벨을 반환.</summary>
+    public static string RoleName(int category) => Label(category);
+
+    /// <summary>카테고리 집합을 ID 오름차순으로 정렬(이름 우선순위 미사용).</summary>
     public static IEnumerable<int> Sort(IEnumerable<int> categories)
-    {
-        var set = new HashSet<int>(categories);
-        foreach (var c in Order) if (set.Remove(c)) yield return c;
-        foreach (var c in set.OrderBy(x => x)) yield return c;
-    }
+        => new SortedSet<int>(categories);
 }

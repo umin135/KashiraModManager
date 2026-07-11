@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Kashira.Core.Formats;
 using Kashira.Core.Games;
 using Kashira.Core.Mods;
 using Kashira.Editor.Services;
@@ -61,6 +62,23 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private GridMaterialVM? _selectedGridMaterial;
     [ObservableProperty] private bool _hasGrid;
     private string? _currentManifestPath;
+
+    // g1m 재질 타입(nMtrID) 편집(0x10003 PropertySet 선택 시)
+    public ObservableCollection<G1mMaterialVM> G1mMaterials { get; } = new();
+    [ObservableProperty] private bool _hasG1mProps;
+
+    // g1m 섹션 raw export/import(G4)
+    [ObservableProperty] private bool _hasG1mSection;
+    [ObservableProperty] private string _g1mSectionInfo = "";
+    private uint? _selG1mSectionId;
+    private int? _selG1mChunkIndex;
+
+    // g1m 서브메시 분석(0x10008 선택 시, 읽기)
+    public ObservableCollection<SubmeshRowVM> Submeshes { get; } = new();
+    [ObservableProperty] private bool _hasSubmeshList;
+
+    // 변형 추가/삭제
+    [ObservableProperty] private string _variationInfo = "";
 
     // 그리드 셀 편집
     [ObservableProperty] private GridCellVM? _selectedCell;
@@ -174,6 +192,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         PreviewImage = null; HasPreview = false;
         HasGrid = false; SelectedGridMaterial = null; _gridMaterials.Clear();
         _currentManifestPath = null; SelectedCell = null; SelectedCellInfo = "셀을 클릭해 선택하세요.";
+        VariationInfo = "";
         OutlinerSections.Clear();
 
         var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
@@ -184,11 +203,73 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             OutlinerSections.Add(new AssetSectionVM("Texture", "texture", ProjectContent.Inspect(path)));
         }
         else if (ext == "g1m")
-            OutlinerSections.Add(new AssetSectionVM("Mesh info", "mesh", ProjectContent.Inspect(path)));
+            BuildG1mSections(path);
         else
             OutlinerSections.Add(new AssetSectionVM("File info", "file", ProjectContent.Inspect(path)));
 
         SelectedSection = OutlinerSections.FirstOrDefault();
+    }
+
+    /// <summary>g1m → Outliner 에 청크/G1MG 섹션 구조를 목차로 표시(G2 뷰어, G1mContainer 기반).</summary>
+    private void BuildG1mSections(string path)
+    {
+        byte[] bytes;
+        G1mContainer c;
+        try { bytes = File.ReadAllBytes(path); c = G1mContainer.Parse(bytes); }
+        catch { OutlinerSections.Add(new AssetSectionVM("Mesh info", "mesh", ProjectContent.Inspect(path))); return; }
+
+        static string Ver(byte[] v) => System.Text.Encoding.ASCII.GetString(v);
+        static string Human(long b) => b < 1024 ? $"{b} B" : b < 1024 * 1024 ? $"{b / 1024.0:0.0} KB" : $"{b / (1024.0 * 1024.0):0.0} MB";
+
+        var geo = G1mGeometry.Analyze(c);
+        OutlinerSections.Add(new AssetSectionVM("Mesh (g1m)", "mesh", new List<ProjectContent.MetaLine>
+        {
+            new("Version", Ver(c.Top[4..8])),
+            new("Chunks", c.Chunks.Count.ToString()),
+            new("Size", Human(bytes.Length)),
+            new("Submeshes", geo.SubmeshCount.ToString()),
+            new("Materials", geo.MaterialCount.ToString()),
+            new("Bones", geo.BoneCount.ToString()),
+            new("Triangles", geo.TotalTris.ToString("N0")),
+            new("Vertices", geo.TotalVerts.ToString("N0")),
+        }));
+
+        for (int ci = 0; ci < c.Chunks.Count; ci++)
+        {
+            var ch = c.Chunks[ci];
+            if (ch.IsG1mg)
+            {
+                OutlinerSections.Add(new AssetSectionVM("G1MG (geometry)", "mesh", new List<ProjectContent.MetaLine>
+                {
+                    new("Version", Ver(ch.Ver)),
+                    new("Sections", ch.Sections!.Count.ToString()),
+                }));  // 컨테이너 — 서브섹션이 export 단위
+                foreach (var s in ch.Sections!)
+                {
+                    var det = new List<ProjectContent.MetaLine>
+                    {
+                        new("Id", $"0x{s.Id:X5}"),
+                        new("Size", Human(s.Inner.Length)),
+                    };
+                    if (s.Id == 0x10002)
+                        try { det.Add(new("Materials", G1mFile.Materials(bytes).Count.ToString())); } catch { }
+                    if (s.Id == G1mMaterialProps.SectionId)
+                        det.Add(new("편집", "재질 타입(nMtrID) 편집 가능"));
+                    OutlinerSections.Add(new AssetSectionVM($"   · {G1mContainer.SectionName(s.Id)}", "file", det,
+                        g1mSectionId: s.Id));
+                }
+            }
+            else
+            {
+                OutlinerSections.Add(new AssetSectionVM(G1mContainer.SigName(ch.Sig),
+                    ch.Sig == G1mContainer.G1msSig || ch.Sig == G1mContainer.G1mmSig ? "mesh" : "file",
+                    new List<ProjectContent.MetaLine>
+                    {
+                        new("Version", Ver(ch.Ver)),
+                        new("Size", Human(ch.Inner.Length)),
+                    }, g1mChunkIndex: ci));
+            }
+        }
     }
 
     private bool TryBuildManifestSections(string path)
@@ -205,7 +286,45 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         foreach (var gm in _gridMaterials)
             OutlinerSections.Add(new AssetSectionVM(gm.Name, "material", MaterialDetails(gm), gm));
         OutlinerSections.Add(new AssetSectionVM("Manifest", "file", ProjectContent.Inspect(path)));
+
+        UpdateVariationInfo();
         return _gridMaterials.Count > 0;
+    }
+
+    // ── 변형 추가/삭제(코스튬 단위) ────────────────────────────
+
+    private void UpdateVariationInfo()
+    {
+        VariationInfo = _currentManifestPath is null
+            ? ""
+            : $"변형 {CostumeManifestEditor.GetVariationCount(_currentManifestPath)}";
+    }
+
+    [RelayCommand]
+    private void AddVariation()
+    {
+        if (_currentManifestPath is null) return;
+        int keep = SelectedGridMaterial?.MaterialIndex ?? int.MinValue;
+        try { CostumeManifestEditor.AddVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "변형 추가됨(새 열은 상속 ·)"; }
+        catch (Exception ex) { Status = $"변형 추가 실패: {ex.Message}"; }
+    }
+
+    [RelayCommand]
+    private void RemoveVariation()
+    {
+        if (_currentManifestPath is null) return;
+        if (CostumeManifestEditor.GetVariationCount(_currentManifestPath) <= 1) { Status = "변형이 1개라 더 줄일 수 없습니다."; return; }
+        int keep = SelectedGridMaterial?.MaterialIndex ?? int.MinValue;
+        try { CostumeManifestEditor.RemoveVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "마지막 변형 삭제됨"; }
+        catch (Exception ex) { Status = $"변형 삭제 실패: {ex.Message}"; }
+    }
+
+    private void RebuildManifestKeeping(int materialIndex)
+    {
+        if (_currentManifestPath is null) return;
+        SetCurrentAsset(_currentManifestPath);
+        var section = OutlinerSections.FirstOrDefault(s => s.Material?.MaterialIndex == materialIndex);
+        if (section is not null) SelectedSection = section;
     }
 
     private static List<ProjectContent.MetaLine> MaterialDetails(GridMaterialVM gm)
@@ -226,16 +345,152 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         if (value is not null) foreach (var line in value.Details) Details.Add(line);
         HasDetails = Details.Count > 0;
 
+        HasG1mProps = false;
+        G1mMaterials.Clear();
+        HasG1mSection = false; _selG1mSectionId = null; _selG1mChunkIndex = null; G1mSectionInfo = "";
+        HasSubmeshList = false; Submeshes.Clear();
+
         if (value?.Material is { } gm)
         {
             SelectedGridMaterial = gm;
             HasGrid = true; HasPreview = false;
+        }
+        else if (value is { IsG1mSection: true })
+        {
+            HasGrid = false; HasPreview = false;
+            HasG1mSection = true;
+            _selG1mSectionId = value.G1mSectionId;
+            _selG1mChunkIndex = value.G1mChunkIndex;
+            string size = value.Details.FirstOrDefault(d => d.Key == "Size")?.Value ?? "";
+            G1mSectionInfo = $"{value.Title.TrimStart(' ', '·').Trim()}  ·  {size}";
+            if (value.G1mSectionId == G1mMaterialProps.SectionId) BuildG1mPropsEditor();
+            else if (value.G1mSectionId == 0x10008) BuildSubmeshList();
         }
         else
         {
             HasGrid = false;
             HasPreview = PreviewImage is not null;
         }
+    }
+
+    // ── g1m 섹션 raw export/import(G4) ────────────────────────
+
+    private (byte[] inner, string key)? ResolveSection(G1mContainer c)
+    {
+        if (_selG1mSectionId is uint id)
+        {
+            var s = c.FindSection(id);
+            return s is null ? null : (s.Inner, G1mContainer.SectionName(id));
+        }
+        if (_selG1mChunkIndex is int ci && ci >= 0 && ci < c.Chunks.Count && !c.Chunks[ci].IsG1mg)
+            return (c.Chunks[ci].Inner, G1mContainer.SigName(c.Chunks[ci].Sig));
+        return null;
+    }
+
+    /// <summary>선택 섹션의 raw 바이트를 g1m 옆에 &lt;g1m&gt;.&lt;key&gt;.bin 으로 내보낸다.</summary>
+    [RelayCommand]
+    private void ExportG1mSection()
+    {
+        if (_currentAssetPath is not { } g1m || !HasG1mSection) return;
+        try
+        {
+            var c = G1mContainer.Parse(File.ReadAllBytes(g1m));
+            if (ResolveSection(c) is not { } r) { Status = "이 섹션은 raw 내보내기 대상이 아닙니다."; return; }
+            string outPath = Path.Combine(Path.GetDirectoryName(g1m)!, $"{Path.GetFileName(g1m)}.{r.key}.bin");
+            File.WriteAllBytes(outPath, r.inner);
+            Status = $"섹션 내보냄: {Path.GetFileName(outPath)} ({r.inner.Length} B)";
+            Refresh();
+        }
+        catch (Exception ex) { Status = $"섹션 내보내기 실패: {ex.Message}"; }
+    }
+
+    /// <summary>.bin 을 선택해 현재 섹션의 raw 바이트를 교체(같은 크기=안전, 다르면 경고).</summary>
+    [RelayCommand]
+    private async Task ImportG1mSection()
+    {
+        if (_currentAssetPath is not { } g1m || !HasG1mSection) return;
+        if (_filePicker is null) { Status = "파일 선택기를 사용할 수 없습니다."; return; }
+        var f = await _filePicker("섹션 .bin 선택", "bin");
+        if (string.IsNullOrEmpty(f)) return;
+        try
+        {
+            var newInner = File.ReadAllBytes(f);
+            var c = G1mContainer.Parse(File.ReadAllBytes(g1m));
+            int oldLen;
+            if (_selG1mSectionId is uint id)
+            {
+                var s = c.FindSection(id);
+                if (s is null) { Status = "섹션을 찾을 수 없음"; return; }
+                oldLen = s.Inner.Length; s.Inner = newInner;
+            }
+            else if (_selG1mChunkIndex is int ci && ci >= 0 && ci < c.Chunks.Count && !c.Chunks[ci].IsG1mg)
+            {
+                oldLen = c.Chunks[ci].Inner.Length; c.Chunks[ci].Inner = newInner;
+            }
+            else { Status = "이 섹션은 raw 가져오기 대상이 아닙니다."; return; }
+
+            File.WriteAllBytes(g1m, c.Build());
+            string warn = newInner.Length != oldLen
+                ? " ⚠ 크기 변경 — G1MF/참조 미갱신, 크래시 가능(백업 권장)" : "";
+            Status = $"섹션 임포트됨: {Path.GetFileName(f)} ({oldLen}→{newInner.Length} B){warn}";
+            ReselectG1mSectionAfterEdit();
+        }
+        catch (Exception ex) { Status = $"섹션 임포트 실패: {ex.Message}"; }
+    }
+
+    private void ReselectG1mSectionAfterEdit()
+    {
+        var id = _selG1mSectionId; var ci = _selG1mChunkIndex;
+        if (_currentAssetPath is not { } g1m) return;
+        SetCurrentAsset(g1m);
+        var sec = OutlinerSections.FirstOrDefault(s =>
+            (id is not null && s.G1mSectionId == id) || (ci is not null && s.G1mChunkIndex == ci));
+        if (sec is not null) SelectedSection = sec;
+    }
+
+    /// <summary>g1m 0x10008 → 서브메시 분석 목록(읽기).</summary>
+    private void BuildSubmeshList()
+    {
+        if (_currentAssetPath is null) return;
+        try
+        {
+            var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
+            foreach (var s in G1mGeometry.ParseSubmeshes(c)) Submeshes.Add(new SubmeshRowVM(s));
+            HasSubmeshList = Submeshes.Count > 0;
+        }
+        catch { HasSubmeshList = false; }
+    }
+
+    /// <summary>g1m 0x10003 → 재질별 nMtrID 편집기 채우기.</summary>
+    private void BuildG1mPropsEditor()
+    {
+        if (_currentAssetPath is null) return;
+        try
+        {
+            var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
+            foreach (var p in G1mMaterialProps.Read(c)) G1mMaterials.Add(new G1mMaterialVM(p));
+            HasG1mProps = G1mMaterials.Count > 0;
+        }
+        catch { HasG1mProps = false; }
+    }
+
+    /// <summary>재질 타입(nMtrID) 변경을 g1m 에 적용(크기 불변, 제자리 교체 → repack).</summary>
+    [RelayCommand]
+    private void ApplyG1mTypes()
+    {
+        if (_currentAssetPath is null || G1mMaterials.Count == 0) return;
+        try
+        {
+            var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
+            int changed = 0;
+            foreach (var mv in G1mMaterials)
+                if (G1mMaterialProps.SetNMtrID(c, mv.Index, mv.SelectedValue)) changed++;
+            File.WriteAllBytes(_currentAssetPath, c.Build());
+            Status = $"재질 타입 적용됨 ({changed}개) — {Path.GetFileName(_currentAssetPath)}";
+            G1mMaterials.Clear();
+            BuildG1mPropsEditor();
+        }
+        catch (Exception ex) { Status = $"재질 타입 적용 실패: {ex.Message}"; }
     }
 
     private void ClearCurrentAsset()
@@ -258,7 +513,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         cell.IsSelected = true;
         string mat = cell.MaterialIndex < 0 ? "Base" : $"Material {cell.MaterialIndex}";
         string col = cell.MaterialIndex < 0 ? "base" : $"var{cell.Column}";
-        SelectedCellInfo = $"{mat} · {col} · {cell.Role} (cat{cell.Category})";
+        SelectedCellInfo = $"{mat} · {col} · cat {cell.Category}";
     }
 
     [RelayCommand]
@@ -351,25 +606,23 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
 
     // ── Import Kissaki bundle ─────────────────────────────────
 
+    /// <summary>번들 임포트: 누르면 폴더 선택기를 열고, 고른 번들 폴더로 바로 임포트한다.</summary>
     [RelayCommand]
-    private async Task PickBundle()
-    {
-        if (_folderPicker is null) return;
-        var p = await _folderPicker();
-        if (!string.IsNullOrEmpty(p)) BundleDir = p;
-    }
-
-    [RelayCommand]
-    private void ImportBundle()
+    private async Task ImportBundle()
     {
         if (!IsAuthoringGame) { Status = "이 게임은 저작을 지원하지 않습니다(Content_Legacy 전용)."; return; }
         if (string.IsNullOrWhiteSpace(NewSetName)) { Status = "세트 이름을 입력하세요."; return; }
-        if (!Directory.Exists(BundleDir)) { Status = "Kissaki 번들 폴더를 선택하세요."; return; }
         var game = GameLibrary.Load().FirstOrDefault(g => GameCatalog.Matches(g, _project.TargetGame));
         if (game is null) { Status = $"게임 '{_project.TargetGame}' 미연결 — Manager 에서 설정/감지하세요."; return; }
+        if (_folderPicker is null) { Status = "폴더 선택기를 사용할 수 없습니다."; return; }
+
+        var dir = await _folderPicker();
+        if (string.IsNullOrEmpty(dir)) return;                       // 취소
+        if (!Directory.Exists(dir)) { Status = "폴더가 존재하지 않습니다."; return; }
+        BundleDir = dir;
         try
         {
-            var r = BundleImporter.Import(new GameWorkspace(game), _project, NewSetName.Trim(), BundleDir, NewTargetCostume.Trim());
+            var r = BundleImporter.Import(new GameWorkspace(game), _project, NewSetName.Trim(), dir, NewTargetCostume.Trim());
             Status = $"임포트 완료: 소스 {r.SourceCostume} → 재질 {r.Materials} · 변형 {r.Variations} · 텍스처 {r.Textures}"
                      + (r.MissingG1t > 0 ? $" (미매칭 g1t {r.MissingG1t})" : "");
             Refresh();

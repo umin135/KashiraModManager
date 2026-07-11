@@ -57,6 +57,49 @@ public static class CostumeManifestEditor
         else obj[key] = atRef;
     }
 
+    // ── 변형 추가/삭제(코스튬 단위) ────────────────────────────
+
+    /// <summary>변형 1개 추가(코스튬 단위): VariationCount++ 및 모든 재질 Variations 에 null(상속) 열 추가.</summary>
+    public static void AddVariation(string manifestPath)
+        => ResizeAllVariations(manifestPath, GetVariationCount(manifestPath, out var root, out _) + 1, root!);
+
+    /// <summary>변형 1개 삭제(코스튬 단위): VariationCount-- 및 모든 재질 Variations 마지막 열 제거(최소 1 유지).</summary>
+    public static void RemoveVariation(string manifestPath)
+    {
+        int cur = GetVariationCount(manifestPath, out var root, out _);
+        if (cur <= 1) return;
+        ResizeAllVariations(manifestPath, cur - 1, root!);
+    }
+
+    /// <summary>현재 변형 수 = VariationCount(있으면), 없으면 재질 Variations 최대 길이(최소 1).</summary>
+    public static int GetVariationCount(string manifestPath)
+        => GetVariationCount(manifestPath, out _, out _);
+
+    private static int GetVariationCount(string manifestPath, out JsonObject? root, out JsonArray? mats)
+    {
+        root = Load(manifestPath);
+        mats = root["Materials"] as JsonArray;
+        if (root["VariationCount"] is JsonValue v && v.TryGetValue<int>(out var n) && n >= 1) return n;
+        int max = 1;
+        if (mats is not null)
+            foreach (var m in mats)
+                if (m is JsonObject mo && mo["Variations"] is JsonArray va) max = Math.Max(max, va.Count);
+        return max;
+    }
+
+    private static void ResizeAllVariations(string manifestPath, int count, JsonObject root)
+    {
+        root["VariationCount"] = count;
+        if (root["Materials"] is JsonArray mats)
+            foreach (var m in mats)
+                if (m is JsonObject mo && mo["Variations"] is JsonArray vars)
+                {
+                    while (vars.Count < count) vars.Add((JsonNode?)null);          // 상속(·) 열 추가
+                    while (vars.Count > count) vars.RemoveAt(vars.Count - 1);        // 마지막 열 제거
+                }
+        Save(root, manifestPath);
+    }
+
     private static JsonObject Load(string path)
         => JsonNode.Parse(File.ReadAllText(path)) as JsonObject
            ?? throw new InvalidDataException($"매니페스트 파싱 실패: {path}");
