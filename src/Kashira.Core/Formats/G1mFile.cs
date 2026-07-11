@@ -19,6 +19,42 @@ public static class G1mFile
     public static int MaterialCount(ReadOnlySpan<byte> g1m)
         => (int)BinaryPrimitives.ReadUInt32LittleEndian(Section(g1m, Sec_MaterialCount));
 
+    /// <summary>
+    /// g1m 재질의 텍스처 슬롯 하나(0x10002 G1MGTexture, 12B). 재질 텍스처 구조의 원천.
+    /// BaseKtidSlot=tex_id(base ktid 전역 슬롯), Primary=KTS 카테고리(tex_type2), Physics=KTS physics(unk_06).
+    /// 슬롯 순서 = KTS/MPR ktid 슬롯 순서. (eternity_common/DOA6/G1mFile.h G1MGTexture 교차검증)
+    /// </summary>
+    public readonly record struct TexSlot(int BaseKtidSlot, int Primary, int Physics);
+
+    /// <summary>
+    /// g1m 0x10002 재질별 텍스처 슬롯 목록. KTS(primary/physics)·base ktid 슬롯 매핑·MPR 슬롯 순서의 단일 원천.
+    /// 재질 i 의 슬롯 j = KTS slot j = MPR ktid slot j. BaseKtidSlot 은 base ktid 의 전역 슬롯.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<TexSlot>> Materials(ReadOnlySpan<byte> g1m)
+    {
+        var sec = Section(g1m, Sec_MaterialCount);
+        int matCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec);
+        int p = 4;
+        var mats = new List<IReadOnlyList<TexSlot>>(matCount);
+        for (int m = 0; m < matCount; m++)
+        {
+            if (p + 16 > sec.Length) break;
+            int numTex = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.Slice(p + 4));
+            p += 16;
+            var slots = new List<TexSlot>(numTex);
+            for (int i = 0; i < numTex && p + 12 <= sec.Length; i++)
+            {
+                int texId = BinaryPrimitives.ReadUInt16LittleEndian(sec.Slice(p));       // tex_id
+                int primary = BinaryPrimitives.ReadUInt16LittleEndian(sec.Slice(p + 4)); // tex_type2 = KTS primary
+                int physics = BinaryPrimitives.ReadUInt16LittleEndian(sec.Slice(p + 6)); // unk_06   = KTS physics
+                slots.Add(new TexSlot(texId, primary, physics));
+                p += 12;
+            }
+            mats.Add(slots);
+        }
+        return mats;
+    }
+
     /// <summary>grp 단일 파츠 생성용 슬라이싱 정보. Sm1/Sm2=mesh entry 수, CountT/CountBigT=idx_count 합.</summary>
     public readonly record struct Slicing(int Sm1, int Sm2, int CountT, int CountBigT);
 

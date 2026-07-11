@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Kashira.Core.Formats;
 
 namespace Kashira.Core.Doa6;
@@ -11,8 +12,9 @@ namespace Kashira.Core.Doa6;
 /// </summary>
 public static class CostumeAuthorInstaller
 {
-    /// <summary>한 재질의 저작 정의. 변형별 (텍스처 슬롯 인덱스 → @텍스처 이름). 변형 항목이 null 이면 그 변형은 base 폴백(MI=0).</summary>
-    public sealed record AuthoredMaterial(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots);
+    /// <summary>한 재질의 저작 정의. 변형별 (카테고리 → @텍스처) + KTS(슬롯 스키마, 임포트 시 g1m 에서 생성해 프로젝트 저장). null 변형=base 폴백.</summary>
+    public sealed record AuthoredMaterial(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots,
+        IReadOnlyList<Formats.KtsFile.Slot>? Kts = null);
 
     /// <summary>
     /// 저작 코스튬 입력. 텍스처는 @이름 → g1t 바이트로 전달(모드 파일에서 로드).
@@ -26,7 +28,9 @@ public static class CostumeAuthorInstaller
         IReadOnlyList<AuthoredMaterial> Materials,
         IReadOnlyDictionary<string, byte[]> TextureFiles,
         bool RequireAllSlots = false,
-        string? MaterialTemplateCostume = null);
+        string? MaterialTemplateCostume = null,
+        IReadOnlyDictionary<int, string>? BaseKtid = null,
+        IReadOnlyList<Formats.KtsFile.Slot>? BaseKts = null);
 
     /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 목록을 반환(누적 가능).</summary>
     public static IReadOnlyList<CostumeOverride.NewAsset> Apply(Doa6SingletonSet set, AuthoredCostume mod)
@@ -36,11 +40,14 @@ public static class CostumeAuthorInstaller
         var tgtAssets = set.ResolveAssets(tgt);
 
         var mtl = MtlFile.Parse(mod.Mtl);
-        if (mod.Materials.Count != mtl.NumNames)
+        if (mod.Materials.Count > 0 && mod.Materials.Count != mtl.NumNames)
             throw new InvalidOperationException($"material 개수({mod.Materials.Count}) ≠ mtl num_names({mtl.NumNames})");
         var nameHashes = mtl.NameHashes();
         int numMat = mod.Materials.Count;
         int M = Math.Max(1, mod.VariationCount);
+
+        // g1m 재질 텍스처 구조 = KTS/슬롯 생성의 앵커. 재질 m ↔ g1m 재질 m.
+        var g1mMats = G1mFile.Materials(mod.G1m);
 
         var newAssets = new List<CostumeOverride.NewAsset>();
 
@@ -65,6 +72,36 @@ public static class CostumeAuthorInstaller
             newAssets.Add(new(fk, bytes, "g1t"));
         }
 
+        // 2b) base-only 바디(MPR 재질 없이 base ktid 만): 렌더는 MPR 체인(MBE+KTS+MPR)이 좌우하므로
+        //     base ktid 텍스처로 **1재질 MPR 체인을 저작**한다(타겟 body 재질 MBE 를 템플릿으로 클론 → KTS 확보).
+        //     base ktid 도 만들어 두되(사용자: 항상 명시 생성) 로딩엔 inert. 기존 MPR 번들 경로(§3~)는 그대로.
+        if (mod.BaseKtid is { Count: > 0 } && mod.Materials.Count == 0)
+        {
+            // 템플릿 = 타겟 var0 재질 MBE(MatIx/blob 제공). KTS 는 base 바디 g1m 에서 생성. 카테고리맵 = BaseKtid.
+            uint template = tgtMat.Mi.Length > 0 ? tgtMat.Mi[0] : 0;
+            if (template == 0) throw new InvalidOperationException("타겟에 템플릿 재질(MBE)이 없어 base 바디를 저작할 수 없음");
+            if (g1mMats.Count == 0) throw new InvalidOperationException("base 바디 g1m 에 재질이 없음");
+            var catMap = ResolveSlots(mod.BaseKtid, texFk);
+            // KTS = 프로젝트 저장분(임포트 시 생성) 우선, 없으면 g1m 에서 유도.
+            var baseKts = mod.BaseKts ?? Formats.KtsFile.SlotsFromG1mMaterial(g1mMats[0]);
+            var chain = MaterialChainFactory.CreateFromKts(set, template, baseKts, catMap);
+            newAssets.AddRange(chain.NewAssets);
+
+            // 1재질 구조 배선: MI = [재질0] × 타겟CVN(전 변형 동일 MBE), nameArr/MRNH = mtl 재질명 1개.
+            int baseCvn = Math.Max(1, tgtMat.Cvn);
+            var baseMi = new uint[baseCvn];
+            for (int v = 0; v < baseCvn; v++) baseMi[v] = chain.MbeOid;
+            uint name0 = nameHashes.Length > 0 ? nameHashes[0] : 0;
+            var motor0 = set.MotorChar(tgt);
+            motor0.SetU32Array(Doa6SingletonSet.P_Mc_NameArr, new[] { name0 });
+            motor0.SetU32Array(Doa6SingletonSet.P_Mc_Mrnh, new[] { name0, chain.MbeOid });
+            set.CharSetting(tgt).SetU32Array(Doa6SingletonSet.P_Cs_Mi, baseMi);
+            set.MarkDirty(Doa6SingletonSet.Ce1CommonFk);
+
+            BuildBaseKtidChain(set, mod, tgtAssets, texFk, newAssets); // base ktid 도 생성(inert)
+            return newAssets;
+        }
+
         // 3) 재질별 MBE 체인 생성(변형별). 템플릿 = MaterialTemplateCostume(있으면, 예: 번들 소스 코스튬)
         //    또는 타겟의 var0 MBE. 소스 템플릿을 쓰면 소스의 KTS/슬롯 레이아웃이 보존돼 슬롯 밀림이 없다.
         var templateMat = mod.MaterialTemplateCostume is { } tc
@@ -82,14 +119,11 @@ public static class CostumeAuthorInstaller
             for (int v = 0; v < variations; v++)
             {
                 if (mat.Slots[v] is not { } slots) { matMbe[m][v] = 0; continue; } // null → 아래서 base 채움
-                // 변형별 네이티브 MBE 를 템플릿으로 클론 → 올바른 KTS(슬롯→타입 스키마)/MatIx/슬롯구조 확보.
-                //   (변형마다 KTS 가 다를 수 있어 var0 고정 클론은 var1~ 을 깨뜨림.) 없으면 var0 로 폴백.
-                int srcV = Math.Min(v, tcvn - 1);
-                uint template = (srcV * tsc + m < templateMat.Mi.Length && templateMat.Mi[srcV * tsc + m] != 0)
-                    ? templateMat.Mi[srcV * tsc + m]
-                    : tgtVar0[Math.Min(m, tgtVar0.Length - 1)];
-                var chain = MaterialChainFactory.Create(set, template, ResolveSlots(slots, texFk),
-                                                        requireAllSlots: mod.RequireAllSlots);
+                // 카테고리 기반: KTS(프로젝트 저장분, 임포트 시 g1m 에서 생성) + MPR 을 카테고리 순서로 빌드.
+                //   템플릿(var0 MBE)은 MatIx/blob 만 제공. 변형별 KTS 순서 차이가 구조적으로 불가.
+                uint template = tgtVar0[Math.Min(m, tgtVar0.Length - 1)];
+                var kts = mat.Kts ?? Formats.KtsFile.SlotsFromG1mMaterial(g1mMats[Math.Min(m, g1mMats.Count - 1)]);
+                var chain = MaterialChainFactory.CreateFromKts(set, template, kts, ResolveSlots(slots, texFk));
                 matMbe[m][v] = chain.MbeOid;
                 newAssets.AddRange(chain.NewAssets);
                 if (baseMbe == 0) baseMbe = chain.MbeOid;
@@ -128,6 +162,39 @@ public static class CostumeAuthorInstaller
         var arr = new uint[sc];
         for (int s = 0; s < sc && s < m.Mi.Length; s++) arr[s] = m.Mi[s];
         return arr;
+    }
+
+    /// <summary>
+    /// base ktid 체인 생성: 소스 base ktid 를 복제해 각 슬롯의 TexContext 를 새로 만들고(→새 g1t FK) base ktid 를
+    /// 새 FK 로 등록 후 타겟 DM.TBC.ktid 를 그 새 base ktid 로 repoint. 전부 온라인 안전(새 g1t/ktid FK + 싱글톤 레코드).
+    /// </summary>
+    private static void BuildBaseKtidChain(Doa6SingletonSet set, AuthoredCostume mod,
+        Doa6SingletonSet.DmAssets tgtAssets, Dictionary<string, uint> texFk,
+        List<CostumeOverride.NewAsset> newAssets)
+    {
+        uint srcBaseFk = mod.MaterialTemplateCostume is { } tc
+            ? set.ResolveAssets(set.CostumeOid(tc)).BaseKtid : tgtAssets.BaseKtid;
+        var bk = (set.Extractor.Extract(srcBaseFk) ?? throw new InvalidDataException($"소스 base ktid 0x{srcBaseFk:X8} 추출 실패")).ToArray();
+        var me = set.MatEditor;
+        foreach (var (slot, atRef) in mod.BaseKtid!)
+        {
+            int off = slot * 8 + 4;
+            if (off + 4 > bk.Length || !texFk.TryGetValue(atRef, out uint g1tFk)) continue;
+            uint objId = BinaryPrimitives.ReadUInt32LittleEndian(bk.AsSpan(off));
+            var texTpl = me.Find(objId) ?? set.Ce.Find(objId);
+            if (texTpl is null) continue;
+            uint newTex = me.AllocOid();
+            var texRec = texTpl.Clone(newTex);
+            texRec.SetU32(Doa6SingletonSet.P_Tex_G1t, g1tFk);
+            me.Insert(texRec);
+            BinaryPrimitives.WriteUInt32LittleEndian(bk.AsSpan(off), newTex);
+        }
+        uint newBaseFk = set.AllocFk();
+        newAssets.Add(new(newBaseFk, bk, "ktid"));
+        if (set.Ce.Find(tgtAssets.TbcObj) is { } tbc)
+            tbc.SetU32(Doa6SingletonSet.P_Tbc_Ktid, newBaseFk);
+        set.MarkDirty(Doa6SingletonSet.CeFk);
+        set.MarkDirty(Doa6SingletonSet.MatEditorFk);
     }
 
     /// <summary>배열의 첫 비-0 값(=베이스 변형 MBE). 전부 0이면 0.</summary>

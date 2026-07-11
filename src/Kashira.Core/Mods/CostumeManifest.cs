@@ -15,10 +15,13 @@ public sealed record CostumeManifest(
     MeshRefs? Mesh,
     int VariationCount,
     IReadOnlyList<MaterialSpec> Materials,
-    string? MaterialTemplate = null)
+    string? MaterialTemplate = null,
+    IReadOnlyDictionary<int, string>? BaseKtid = null,
+    string? BaseKts = null)
 {
     public bool IsSwap => !string.IsNullOrWhiteSpace(SourceCostume);
-    public bool IsAuthored => Mesh is not null && Materials.Count > 0;
+    // 저작 = 메시 + (MPR 재질 OR base ktid). base-only 바디는 Materials 없이 BaseKtid 만 있다.
+    public bool IsAuthored => Mesh is not null && (Materials.Count > 0 || BaseKtid is { Count: > 0 });
 
     public static CostumeManifest? Parse(string json)
     {
@@ -45,8 +48,12 @@ public sealed record CostumeManifest(
                 foreach (var mat in mats.EnumerateArray())
                     if (ParseMaterial(mat) is { } spec) materials.Add(spec);
 
+            IReadOnlyDictionary<int, string>? baseKtid = null;
+            if (root.TryGetProperty("BaseKtid", out var bk) && bk.ValueKind == JsonValueKind.Object)
+                baseKtid = ParseSlots(bk);
+
             return new CostumeManifest(modType, target!, Str(root, "SourceCostume"), mesh, varCount, materials,
-                Str(root, "MaterialTemplate"));
+                Str(root, "MaterialTemplate"), baseKtid, Str(root, "BaseKts"));
         }
         catch { return null; }
     }
@@ -70,7 +77,7 @@ public sealed record CostumeManifest(
             perVar.Add(ParseSlots(tx));
         }
         if (perVar.Count == 0) return null;
-        return new MaterialSpec(variation, perVar);
+        return new MaterialSpec(variation, perVar, Str(mat, "Kts"));
     }
 
     /// <summary>{ "0": "@a.g1t", "3": "@b.g1t" } → {0:@a.g1t, 3:@b.g1t}.</summary>
@@ -91,5 +98,5 @@ public sealed record CostumeManifest(
 /// <summary>저작 메시 에셋 심볼릭 참조(@파일이름).</summary>
 public sealed record MeshRefs(string? G1m, string? Grp, string? Mtl);
 
-/// <summary>한 재질 = 변형-영향 여부 + 변형별 (슬롯 인덱스 → @텍스처). 변형 항목이 null 이면 그 변형은 base 폴백.</summary>
-public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots);
+/// <summary>한 재질 = 변형-영향 여부 + 변형별 (카테고리 → @텍스처) + KTS(@슬롯스키마 참조). 변형 항목 null = base 폴백.</summary>
+public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots, string? Kts = null);

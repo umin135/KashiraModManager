@@ -231,12 +231,30 @@ public sealed class KtmodPackage
                         texFiles[atRef] = b;
                     }
             }
-            mats.Add(new Doa6.CostumeAuthorInstaller.AuthoredMaterial(spec.VariationAffecting, spec.Slots));
+            mats.Add(new Doa6.CostumeAuthorInstaller.AuthoredMaterial(spec.VariationAffecting, spec.Slots, ResolveKts(spec.Kts)));
+        }
+
+        // base ktid 텍스처(기본 형태) 수집
+        if (m.BaseKtid is not null)
+            foreach (var atRef in m.BaseKtid.Values)
+                if (!texFiles.ContainsKey(atRef))
+                {
+                    var b = Resolve(atRef);
+                    if (b is null) return null; // 필수 base 텍스처 누락
+                    texFiles[atRef] = b;
+                }
+
+        // KTS(@slot 스키마 참조, 프로젝트 저장분) → 슬롯 목록 해석
+        IReadOnlyList<Formats.KtsFile.Slot>? ResolveKts(string? atRef)
+        {
+            var b = atRef is null ? null : Resolve(atRef);
+            return b is null ? null : Formats.KtsFile.FromJson(System.Text.Encoding.UTF8.GetString(b));
         }
 
         return new Doa6.CostumeAuthorInstaller.AuthoredCostume(
             m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles,
-            RequireAllSlots: false, MaterialTemplateCostume: m.MaterialTemplate);
+            RequireAllSlots: false, MaterialTemplateCostume: m.MaterialTemplate, BaseKtid: m.BaseKtid,
+            BaseKts: ResolveKts(m.BaseKts));
     }
 
     /// <summary>Content/ 아래 모든 비-json 파일을 leaf 파일명 → 엔트리로(@참조 전역 스코프).</summary>

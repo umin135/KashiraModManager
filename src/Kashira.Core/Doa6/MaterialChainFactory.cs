@@ -78,4 +78,59 @@ public static class MaterialChainFactory
 
     private static IdokRecord? FindTexContext(Doa6SingletonSet set, uint oid) =>
         set.MatEditor.Find(oid) ?? set.Ce.Find(oid);
+
+    /// <summary>
+    /// ★ 카테고리 기반 재질 체인 생성. **프로젝트에 저장된 KTS(에디터가 g1m 에서 임포트 시 생성)** 로부터:
+    ///   - KTS = 주어진 슬롯(primary/physics)으로 새 FK 등록. (슬롯 순서 = KTS 순서)
+    ///   - MPR ktid = KTS 슬롯 순서로 처음부터 빌드: 슬롯 j → categoryToG1t[primary] → 새 TexContext → (j, objID).
+    ///   - MBE/TBC 는 템플릿 클론(MatIx/blob prop 보존)하되 KTS·TBC 만 새 것으로 교체.
+    /// 카테고리 매칭이라 변형별 KTS 순서 차이(변형 버그)가 구조적으로 불가. 미매핑 카테고리는 템플릿 TexContext g1t 유지.
+    /// </summary>
+    public static NewMaterial CreateFromKts(Doa6SingletonSet set, uint templateMbeOid,
+        IReadOnlyList<Formats.KtsFile.Slot> ktsSlots, IReadOnlyDictionary<int, uint> categoryToG1t)
+    {
+        var me = set.MatEditor;
+        var mbeTpl = me.Find(templateMbeOid) ?? throw new KeyNotFoundException($"템플릿 MBE 0x{templateMbeOid:X8} 없음");
+        uint tbcOid = mbeTpl.ReadU32(Doa6SingletonSet.P_Dm_TbcObj);
+        var tbcTpl = me.Find(tbcOid) ?? throw new KeyNotFoundException($"템플릿 TBC 0x{tbcOid:X8} 없음");
+        uint tplMprFk = tbcTpl.ReadU32(Doa6SingletonSet.P_Tbc_Ktid);
+        var tplMpr = set.Extractor.Extract(tplMprFk)?.ToArray()
+                     ?? throw new InvalidDataException($"템플릿 MPR 0x{tplMprFk:X8} 추출 실패");
+        uint tplTexOid = BinaryPrimitives.ReadUInt32LittleEndian(tplMpr.AsSpan(MprObjOff)); // 첫 슬롯 TexContext = 클론 원본
+        var texTpl = FindTexContext(set, tplTexOid) ?? throw new KeyNotFoundException($"TexContext 0x{tplTexOid:X8} 없음");
+
+        // 1) KTS = 프로젝트 KTS 슬롯을 새 FK 로 등록
+        uint ktsFk = set.AllocFk();
+        var newAssets = new List<CostumeOverride.NewAsset> { new(ktsFk, Formats.KtsFile.Build(ktsSlots), "kts") };
+
+        // 2) MPR ktid = KTS 슬롯 순서로 빌드(슬롯 j → 카테고리 → g1t → 새 TexContext)
+        var mpr = new byte[ktsSlots.Count * MprEntry];
+        for (int j = 0; j < ktsSlots.Count; j++)
+        {
+            uint newTex = me.AllocOid();
+            var texRec = texTpl.Clone(newTex);
+            if (categoryToG1t.TryGetValue(ktsSlots[j].Primary, out uint g1t))
+                texRec.SetU32(Doa6SingletonSet.P_Tex_G1t, g1t);
+            me.Insert(texRec);
+            BinaryPrimitives.WriteUInt32LittleEndian(mpr.AsSpan(j * MprEntry), (uint)j);
+            BinaryPrimitives.WriteUInt32LittleEndian(mpr.AsSpan(j * MprEntry + MprObjOff), newTex);
+        }
+        uint newMprFk = set.AllocFk();
+        newAssets.Add(new(newMprFk, mpr, "ktid"));
+
+        // 3) 새 TBC(→새 MPR) + 새 MBE(→새 TBC, KTS=생성한 새 KTS)
+        uint newTbc = me.AllocOid();
+        var tbcRec = tbcTpl.Clone(newTbc);
+        tbcRec.SetU32(Doa6SingletonSet.P_Tbc_Ktid, newMprFk);
+        me.Insert(tbcRec);
+
+        uint newMbe = me.AllocOid();
+        var mbeRec = mbeTpl.Clone(newMbe);
+        mbeRec.SetU32(Doa6SingletonSet.P_Dm_TbcObj, newTbc);
+        mbeRec.SetU32(Doa6SingletonSet.P_Mbe_Kts, ktsFk);
+        me.Insert(mbeRec);
+
+        set.MarkDirty(Doa6SingletonSet.MatEditorFk);
+        return new NewMaterial(newMbe, newAssets);
+    }
 }
