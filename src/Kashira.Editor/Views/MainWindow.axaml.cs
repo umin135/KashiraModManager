@@ -25,18 +25,20 @@ public partial class MainWindow : Window
         return result.FirstOrDefault()?.TryGetLocalPath();
     }
 
-    /// <summary>확장자 필터 파일 선택기(예: g1m/grp). 취소 시 null.</summary>
+    /// <summary>확장자 필터 파일 선택기(예: "g1m", "dds,tga"). 취소 시 null.</summary>
     public async Task<string?> PickFileAsync(string title, string ext)
     {
         var top = GetTopLevel(this);
         if (top is null) return null;
+        var exts = ext.Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+        var patterns = exts.Select(e => "*." + e).ToArray();
         var result = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = title,
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
-                new FilePickerFileType(ext.ToUpperInvariant()) { Patterns = new[] { "*." + ext } },
+                new FilePickerFileType(string.Join("/", exts.Select(e => e.ToUpperInvariant()))) { Patterns = patterns },
             },
         });
         return result.FirstOrDefault()?.TryGetLocalPath();

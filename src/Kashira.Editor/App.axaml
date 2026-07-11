@@ -9,6 +9,9 @@
     </Application.DataTemplates>
 
     <Application.Resources>
+        <!-- 아이콘 키 → Geometry 변환기(자체 벡터, 무의존) -->
+        <local:IconKindConverter x:Key="IconKind"/>
+
         <!-- Kashira 테마 팔레트 (Manager와 공유 톤) -->
         <SolidColorBrush x:Key="KashiraBg" Color="#3d3d4c"/>
         <SolidColorBrush x:Key="KashiraPanel" Color="#34343f"/>

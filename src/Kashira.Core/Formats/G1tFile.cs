@@ -206,4 +206,23 @@ public static class G1tFile
         "BC2" or "BC3" or "BC5" or "BC6H" or "BC7" => 16,
         _ => 0,
     };
+
+    /// <summary>비압축 포맷의 픽셀당 바이트 수(BC 는 0). RGBA8=4, R32F=4, RGBA16F=8, RGBA32F=16, R8/A8=1.</summary>
+    public static int BytesPerPixel(byte fmt) => fmt switch
+    {
+        0x00 or 0x01 or 0x09 or 0x0A => 4,  // RGBA8 / BGRA8
+        0x02 => 4,                          // R32_FLOAT
+        0x03 or 0x0C => 8,                  // R16G16B16A16_FLOAT
+        0x04 => 16,                         // R32G32B32A32_FLOAT
+        0x0F => 1,                          // A8/R8
+        _ when BlockBytes(fmt) > 0 => 0,    // BC
+        _ => 4,                             // 미상 비압축은 4 가정
+    };
+
+    /// <summary>한 mip(단일 슬라이스)의 바이트 수. BC 는 블록 정렬, 비압축은 픽셀당 바이트.</summary>
+    public static int MipByteSize(byte fmt, int w, int h)
+    {
+        int bb = BlockBytes(fmt);
+        return bb > 0 ? ((w + 3) / 4) * ((h + 3) / 4) * bb : w * h * BytesPerPixel(fmt);
+    }
 }

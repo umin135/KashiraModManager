@@ -21,6 +21,8 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
     <!-- 텍스처 프리뷰용 BCn 디코더(BC1~7). Editor 전용 — Manager exe 는 Core 만 참조해 가볍게 유지. -->
     <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <!-- 아이콘은 자체 StreamGeometry(EditorIcons) 사용 — 무의존, Avalonia 12 호환.
+         (Projektanker.Icons 는 Avalonia 12 호환 버전 부재로 런타임 크래시 → 제거) -->
   </ItemGroup>
 
   <!-- Core는 양쪽(Manager/Editor) 공유. 무거운 저작(편집/변환/g1m 재구성) 로직은

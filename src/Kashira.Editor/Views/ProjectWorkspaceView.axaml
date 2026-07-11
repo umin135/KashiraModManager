@@ -6,243 +6,181 @@
              x:DataType="vm:ProjectWorkspaceViewModel"
              x:CompileBindings="True">
 
-    <!-- UE 스타일 도킹 셸: 툴바 / [Outliner | Editor | Details] / Content Browser / 상태바 -->
-    <Grid RowDefinitions="Auto,*,4,220,Auto" Background="{StaticResource KashiraBg}">
+    <Grid RowDefinitions="Auto,Auto,*,4,230,Auto" Background="{StaticResource KashiraBg}">
+
+        <!-- File 메뉴 -->
+        <Menu Grid.Row="0" Background="{StaticResource KashiraPanel}">
+            <MenuItem Header="File">
+                <MenuItem Header="Open Project…" Command="{Binding OpenProjectCommand}"/>
+                <MenuItem Header="Open Project Folder" Command="{Binding OpenProjectFolderCommand}"/>
+                <Separator/>
+                <MenuItem Header="Projects (New / Recent)…" Command="{Binding BackToLauncherCommand}"/>
+            </MenuItem>
+        </Menu>
 
         <!-- 툴바 -->
-        <Border Grid.Row="0" Background="{StaticResource KashiraPanel}" Padding="10,7">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                <Button Grid.Column="0" Content="← Projects" Command="{Binding BackCommand}"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" VerticalAlignment="Center">
+        <Border Grid.Row="1" Background="{StaticResource KashiraPanel}" Padding="10,6">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="Bold"
                                VerticalAlignment="Center" Foreground="{StaticResource KashiraText}"/>
-                    <Border Background="{StaticResource KashiraPanelHi}" CornerRadius="3" Padding="6,2" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding TargetGame}" Foreground="{StaticResource KashiraText}"/>
-                            <TextBlock Text="·" Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBlock Text="{Binding GameModeText}" Foreground="{StaticResource KashiraTextDim}"/>
-                        </StackPanel>
+                    <Border Background="{StaticResource KashiraPanelHi}" CornerRadius="3" Padding="8,2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding GameStatus}" Foreground="{StaticResource KashiraTextDim}"/>
                     </Border>
                 </StackPanel>
-                <Button Grid.Column="3" Content="Refresh" Command="{Binding RefreshCommand}"/>
-                <Button Grid.Column="4" Content="Open Folder" Command="{Binding OpenProjectFolderCommand}"/>
-                <Button Grid.Column="6" Content="Build .ktmod" Classes="accent" Command="{Binding BuildCommand}"/>
+                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}"/>
+                <Button Grid.Column="3" Content="Open Folder" Command="{Binding OpenProjectFolderCommand}"/>
+                <Button Grid.Column="4" Content="Build .ktmod" Classes="accent" Command="{Binding BuildCommand}"
+                        ToolTip.Tip="연결된 게임의 _Kashira/Mods 에 .ktmod 생성"/>
             </Grid>
         </Border>
 
-        <!-- 메인: Outliner | Editor | Details -->
-        <Grid Grid.Row="1" ColumnDefinitions="240,4,*,4,300">
+        <!-- 메인: Outliner(목차) | Viewport | Details -->
+        <Grid Grid.Row="2" ColumnDefinitions="240,4,*,4,300">
 
-            <!-- Outliner (좌) -->
+            <!-- Outliner: 선택 에셋의 목차 -->
             <DockPanel Grid.Column="0" Background="{StaticResource KashiraPanel}">
                 <TextBlock DockPanel.Dock="Top" Text="OUTLINER" FontSize="11" FontWeight="Bold"
-                           Foreground="{StaticResource KashiraTextDim}" Margin="10,8,10,6"/>
-                <TreeView ItemsSource="{Binding OutlinerRoots}"
-                          SelectedItem="{Binding SelectedNode}"
-                          Background="Transparent" Margin="4,0,4,4">
-                    <TreeView.ItemTemplate>
-                        <TreeDataTemplate x:DataType="mods:ProjectContent+ContentNode"
-                                          ItemsSource="{Binding Children}">
-                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraText}"/>
-                        </TreeDataTemplate>
-                    </TreeView.ItemTemplate>
-                </TreeView>
+                           Foreground="{StaticResource KashiraTextDim}" Margin="12,8,12,6"/>
+                <TextBlock DockPanel.Dock="Top" Text="{Binding CurrentAssetName}" Margin="12,0,12,6"
+                           Foreground="{StaticResource KashiraText}" TextTrimming="CharacterEllipsis"/>
+                <ListBox ItemsSource="{Binding OutlinerSections}" SelectedItem="{Binding SelectedSection}"
+                         Background="Transparent" Margin="4,0,4,4">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AssetSectionVM">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PathIcon Data="{Binding Icon, Converter={StaticResource IconKind}}"
+                                          Width="15" Height="15" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource KashiraText}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
             </DockPanel>
 
             <GridSplitter Grid.Column="1" Background="{StaticResource KashiraBg}" ResizeDirection="Columns"/>
 
-            <!-- Editor (중앙) -->
-            <Border Grid.Column="2" Background="{StaticResource KashiraBg}" Padding="14">
-                <DockPanel>
-                    <!-- 게임 연결 상태 배너 -->
-                    <Border DockPanel.Dock="Top" Background="{StaticResource KashiraPanel}" CornerRadius="4"
-                            Padding="10,6" Margin="0,0,0,10">
-                        <TextBlock Text="{Binding GameStatus}" Foreground="{StaticResource KashiraTextDim}"/>
-                    </Border>
-
-                    <!-- 저작 게임: Kissaki 번들 임포트 -->
-                    <Expander DockPanel.Dock="Top" Header="＋ Import Kissaki bundle" IsExpanded="True"
-                              IsVisible="{Binding IsAuthoringGame}" Margin="0,0,0,10">
-                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
-                              Margin="8" ColumnSpacing="8" RowSpacing="6">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Bundle folder" VerticalAlignment="Center"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BundleDir}" IsReadOnly="True"
-                                     PlaceholderText="…\export\DOA6LR\root\RAC_COS_005.g1m"/>
-                            <Button Grid.Row="0" Grid.Column="2" Content="Pick folder…" Command="{Binding PickBundleCommand}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Set name" VerticalAlignment="Center"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding NewSetName}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Target costume" VerticalAlignment="Center"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding NewTargetCostume}"
-                                     PlaceholderText="(blank = same as source, i.e. re-skin)"/>
-                            <Button Grid.Row="3" Grid.Column="2" Content="Import" Classes="accent"
-                                    Command="{Binding ImportBundleCommand}"/>
-                        </Grid>
-                    </Expander>
-
-                    <!-- Legacy 전용 게임: 안내 -->
-                    <Border DockPanel.Dock="Top" IsVisible="{Binding IsLegacyOnly}"
-                            Background="{StaticResource KashiraPanel}" CornerRadius="4" Padding="12" Margin="0,0,0,10">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="이 게임은 Content_Legacy raw redirect 전용입니다."
-                                       Foreground="{StaticResource KashiraText}" FontWeight="SemiBold"/>
-                            <TextBlock Text="싱글톤 DB 가 규명되지 않아 재질/변형 저작은 비활성입니다. Content_Legacy 폴더에 raw 파일(0x{ktid}.{ext})을 넣으면 그대로 리다이렉트됩니다."
-                                       Foreground="{StaticResource KashiraTextDim}" TextWrapping="Wrap"/>
-                            <Button Content="Open Content_Legacy Folder" HorizontalAlignment="Left"
-                                    Command="{Binding OpenLegacyFolderCommand}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 편집 뷰포트: 매니페스트 → 재질 그리드(Phase 3) / g1t → 텍스처 프리뷰(Phase 2) / 안내 -->
-                    <Border Background="{StaticResource KashiraPanel}" CornerRadius="6">
-                        <Grid>
-                            <!-- 재질 × 변형 × 카테고리 그리드 -->
-                            <DockPanel IsVisible="{Binding HasGrid}" Margin="12">
-                                <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
-                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                        <TextBlock Text="Material" VerticalAlignment="Center"
-                                                   Foreground="{StaticResource KashiraTextDim}"/>
-                                        <ComboBox ItemsSource="{Binding GridMaterials}"
-                                                  SelectedItem="{Binding SelectedGridMaterial}" MinWidth="160">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:GridMaterialVM">
-                                                    <TextBlock Text="{Binding Name}"/>
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
-                                        <Border Background="#5a2d2d" CornerRadius="3" Padding="8,3"
-                                                IsVisible="{Binding SelectedGridMaterial.MissingAlbedo}">
-                                            <TextBlock Text="⚠ albedo 누락" Foreground="#ffb3a7"/>
-                                        </Border>
-                                    </StackPanel>
-                                    <!-- 셀 편집 패널 -->
-                                    <Border Background="{StaticResource KashiraBg}" CornerRadius="4" Padding="10,7">
-                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding SelectedCellInfo}"
-                                                           Foreground="{StaticResource KashiraText}"/>
-                                                <TextBlock Foreground="{StaticResource KashiraTextDim}" FontSize="11"
-                                                           Text="Content 브라우저에서 g1t 선택 후 '배정'"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="배정" Classes="accent"
-                                                    Command="{Binding AssignSelectedCellCommand}"/>
-                                            <Button Grid.Column="2" Content="지우기"
-                                                    Command="{Binding ClearSelectedCellCommand}"/>
-                                        </Grid>
-                                    </Border>
+            <!-- Viewport -->
+            <Border Grid.Column="2" Background="{StaticResource KashiraBg}" Padding="12">
+                <Grid>
+                    <!-- 재질 그리드 -->
+                    <DockPanel IsVisible="{Binding HasGrid}">
+                        <Border DockPanel.Dock="Top" Background="{StaticResource KashiraPanel}" CornerRadius="4" Padding="10,7" Margin="0,0,0,10">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SelectedCellInfo}" Foreground="{StaticResource KashiraText}"/>
+                                    <TextBlock Text="Content 브라우저에서 g1t 선택 후 '배정'" FontSize="11"
+                                               Foreground="{StaticResource KashiraTextDim}"/>
                                 </StackPanel>
+                                <Border Grid.Column="1" Background="#5a2d2d" CornerRadius="3" Padding="8,3" VerticalAlignment="Center"
+                                        IsVisible="{Binding SelectedGridMaterial.MissingAlbedo}">
+                                    <TextBlock Text="⚠ albedo" Foreground="#ffb3a7"/>
+                                </Border>
+                                <Button Grid.Column="2" Content="배정" Classes="accent" Command="{Binding AssignSelectedCellCommand}"/>
+                                <Button Grid.Column="3" Content="지우기" Command="{Binding ClearSelectedCellCommand}"/>
+                            </Grid>
+                        </Border>
 
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                                              DataContext="{Binding SelectedGridMaterial}">
-                                    <StackPanel>
-                                        <!-- 헤더: 역할 열 + 변형 열 -->
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="96" Height="26"/>
-                                            <ItemsControl ItemsSource="{Binding ColumnHeaders}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="x:String">
-                                                        <Border Width="96" Height="26">
-                                                            <TextBlock Text="{Binding}" HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center" FontWeight="SemiBold"
-                                                                       Foreground="{StaticResource KashiraTextDim}"/>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-
-                                        <!-- 행: 카테고리(역할) + 셀 썸네일 -->
-                                        <ItemsControl ItemsSource="{Binding Rows}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:GridRowVM">
-                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                        <Border Width="96" Height="96">
-                                                            <TextBlock Text="{Binding Role}" VerticalAlignment="Center"
-                                                                       Foreground="{StaticResource KashiraText}"/>
-                                                        </Border>
-                                                        <ItemsControl ItemsSource="{Binding Cells}">
-                                                            <ItemsControl.ItemsPanel>
-                                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                                                            </ItemsControl.ItemsPanel>
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="vm:GridCellVM">
-                                                                    <Button Classes="cell" Click="OnCellClick"
-                                                                            Width="96" Height="96" Margin="0,0,4,0"
-                                                                            ToolTip.Tip="{Binding Tooltip}">
-                                                                        <Grid>
-                                                                            <Border Background="{StaticResource KashiraBg}" CornerRadius="4"/>
-                                                                            <Image Source="{Binding Thumb}" Stretch="Uniform" Margin="4"
-                                                                                   IsVisible="{Binding HasThumb}"
-                                                                                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
-                                                                            <TextBlock Text="{Binding Glyph}" IsVisible="{Binding !HasThumb}"
-                                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                                       FontSize="20" Foreground="{StaticResource KashiraTextDim}"/>
-                                                                            <Border IsVisible="{Binding IsSelected}" CornerRadius="4"
-                                                                                    BorderBrush="{StaticResource KashiraAccent}" BorderThickness="3"/>
-                                                                        </Grid>
-                                                                    </Button>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </DockPanel>
-
-                            <!-- 텍스처 프리뷰 -->
-                            <DockPanel IsVisible="{Binding HasPreview}" Margin="10">
-                                <TextBlock DockPanel.Dock="Bottom" Text="{Binding SelectedName}"
-                                           HorizontalAlignment="Center" Margin="0,8,0,0"
-                                           Foreground="{StaticResource KashiraTextDim}"/>
-                                <Image Source="{Binding PreviewImage}" Stretch="Uniform"
-                                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
-                            </DockPanel>
-
-                            <!-- 안내(선택 없음/기타) -->
-                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
-                                <StackPanel.IsVisible>
-                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                        <Binding Path="!HasGrid"/>
-                                        <Binding Path="!HasPreview"/>
-                                    </MultiBinding>
-                                </StackPanel.IsVisible>
-                                <TextBlock Text="{Binding SelectedName}" FontSize="18" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" Foreground="{StaticResource KashiraText}"/>
-                                <TextBlock Text="코스튬 매니페스트(.json)를 선택하면 재질 그리드, g1t 를 선택하면 텍스처가 표시됩니다."
-                                           HorizontalAlignment="Center" Foreground="{StaticResource KashiraTextDim}"/>
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                      DataContext="{Binding SelectedGridMaterial}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="96" Height="26"/>
+                                    <ItemsControl ItemsSource="{Binding ColumnHeaders}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Border Width="96" Height="26">
+                                                    <TextBlock Text="{Binding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding Rows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:GridRowVM">
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <Border Width="96" Height="96">
+                                                    <TextBlock Text="{Binding Role}" VerticalAlignment="Center" Foreground="{StaticResource KashiraText}"/>
+                                                </Border>
+                                                <ItemsControl ItemsSource="{Binding Cells}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:GridCellVM">
+                                                            <Button Classes="cell" Click="OnCellClick" Width="96" Height="96" Margin="0,0,4,0"
+                                                                    ToolTip.Tip="{Binding Tooltip}">
+                                                                <Grid>
+                                                                    <Border Background="{StaticResource KashiraBg}" CornerRadius="4"/>
+                                                                    <Image Source="{Binding Thumb}" Stretch="Uniform" Margin="4"
+                                                                           IsVisible="{Binding HasThumb}"
+                                                                           RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                                                    <TextBlock Text="{Binding Glyph}" IsVisible="{Binding !HasThumb}"
+                                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                               FontSize="20" Foreground="{StaticResource KashiraTextDim}"/>
+                                                                    <Border IsVisible="{Binding IsSelected}" CornerRadius="4"
+                                                                            BorderBrush="{StaticResource KashiraAccent}" BorderThickness="3"/>
+                                                                </Grid>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
-                        </Grid>
-                    </Border>
-                </DockPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+
+                    <!-- 텍스처 프리뷰 -->
+                    <DockPanel IsVisible="{Binding HasPreview}">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8"
+                                    HorizontalAlignment="Center" Margin="0,0,0,8">
+                            <Button Content="Export DDS" Command="{Binding ExportDdsCommand}"/>
+                            <Button Content="Export TGA" Command="{Binding ExportTgaCommand}"/>
+                            <Button Content="Replace…" Classes="accent" Command="{Binding ReplaceTextureCommand}"/>
+                        </StackPanel>
+                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding CurrentAssetName}" HorizontalAlignment="Center"
+                                   Margin="0,8,0,0" Foreground="{StaticResource KashiraTextDim}"/>
+                        <Image Source="{Binding PreviewImage}" Stretch="Uniform"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                    </DockPanel>
+
+                    <!-- 안내 -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                        <StackPanel.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="!HasGrid"/>
+                                <Binding Path="!HasPreview"/>
+                            </MultiBinding>
+                        </StackPanel.IsVisible>
+                        <TextBlock Text="Content 브라우저에서 에셋을 선택하세요." HorizontalAlignment="Center"
+                                   Foreground="{StaticResource KashiraTextDim}"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <GridSplitter Grid.Column="3" Background="{StaticResource KashiraBg}" ResizeDirection="Columns"/>
 
-            <!-- Details (우) -->
+            <!-- Details: 선택 목차 항목의 상세 -->
             <DockPanel Grid.Column="4" Background="{StaticResource KashiraPanel}">
                 <TextBlock DockPanel.Dock="Top" Text="DETAILS" FontSize="11" FontWeight="Bold"
                            Foreground="{StaticResource KashiraTextDim}" Margin="12,8,12,6"/>
-                <TextBlock DockPanel.Dock="Top" Text="에셋을 선택하면 속성이 표시됩니다."
-                           Foreground="{StaticResource KashiraTextDim}" Margin="12,0,12,0"
-                           IsVisible="{Binding !HasMetadata}"/>
+                <TextBlock DockPanel.Dock="Top" Text="목차에서 항목을 선택하세요." Margin="12,0,12,0"
+                           Foreground="{StaticResource KashiraTextDim}" IsVisible="{Binding !HasDetails}"/>
                 <ScrollViewer Padding="12,4,12,12">
-                    <ItemsControl ItemsSource="{Binding Metadata}">
+                    <ItemsControl ItemsSource="{Binding Details}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="mods:ProjectContent+MetaLine">
                                 <Grid ColumnDefinitions="130,*" Margin="0,0,0,4">
-                                    <TextBlock Grid.Column="0" Text="{Binding Key}"
-                                               Foreground="{StaticResource KashiraTextDim}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
-                                               Foreground="{StaticResource KashiraText}"
-                                               TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding Key}" Foreground="{StaticResource KashiraTextDim}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{StaticResource KashiraText}" TextWrapping="Wrap"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -251,37 +189,66 @@
             </DockPanel>
         </Grid>
 
-        <GridSplitter Grid.Row="2" Background="{StaticResource KashiraBg}" ResizeDirection="Rows"
-                      HorizontalAlignment="Stretch"/>
+        <GridSplitter Grid.Row="3" Background="{StaticResource KashiraBg}" ResizeDirection="Rows" HorizontalAlignment="Stretch"/>
 
-        <!-- Content Browser (하단, 통합) -->
-        <DockPanel Grid.Row="3" Background="{StaticResource KashiraPanel}">
-            <TextBlock DockPanel.Dock="Top" Text="CONTENT BROWSER" FontSize="11" FontWeight="Bold"
-                       Foreground="{StaticResource KashiraTextDim}" Margin="12,8,12,6"/>
-            <TextBlock DockPanel.Dock="Top" Text="에셋이 없습니다. 저작 게임은 번들을 임포트하세요."
-                       Foreground="{StaticResource KashiraTextDim}" Margin="12,0,12,0"
-                       IsVisible="{Binding !HasAssets}"/>
-            <ListBox x:Name="AssetList" ItemsSource="{Binding BrowserAssets}"
-                     SelectedItem="{Binding SelectedAsset}" Background="Transparent" Margin="6,0,6,6">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProjectWorkspaceViewModel+AssetItem">
-                        <Grid ColumnDefinitions="*,70,110,80">
-                            <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                       Foreground="{StaticResource KashiraText}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Ext}"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding Root}"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                            <TextBlock Grid.Column="3" Text="{Binding Size}"
-                                       Foreground="{StaticResource KashiraTextDim}"/>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </DockPanel>
+        <!-- Content Browser: 폴더 트리 | 항목 그리드 -->
+        <Grid Grid.Row="4" Background="{StaticResource KashiraPanel}" RowDefinitions="Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="10,7,10,4" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="CONTENT BROWSER" FontSize="11" FontWeight="Bold"
+                           VerticalAlignment="Center" Foreground="{StaticResource KashiraTextDim}"/>
+                <Button Grid.Column="2" Content="Legacy 폴더" Command="{Binding OpenLegacyFolderCommand}"
+                        ToolTip.Tip="Content_Legacy 폴더 열기"/>
+                <Button Grid.Column="3" Content="＋ Import Bundle" Classes="accent" Command="{Binding ImportBundleCommand}"
+                        IsVisible="{Binding IsAuthoringGame}" ToolTip.Tip="Kissaki 번들 임포트"/>
+            </Grid>
+
+            <Grid Grid.Row="1" ColumnDefinitions="260,4,*">
+                <!-- 폴더 트리(폴더만) -->
+                <TreeView Grid.Column="0" ItemsSource="{Binding FolderTree}" SelectedItem="{Binding SelectedFolder}"
+                          Background="{StaticResource KashiraBg}" Margin="6,0,0,6">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate x:DataType="mods:ProjectContent+ContentNode" ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="{Binding Converter={StaticResource IconKind}, ConverterParameter=folder}"
+                                          Width="14" Height="14" Foreground="#d8b26a"/>
+                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraText}"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+
+                <GridSplitter Grid.Column="1" Background="{StaticResource KashiraPanel}" ResizeDirection="Columns"/>
+
+                <!-- 폴더 직속 항목 그리드 -->
+                <ListBox Grid.Column="2" ItemsSource="{Binding FolderItems}" SelectedItem="{Binding SelectedBrowserItem}"
+                         DoubleTapped="OnBrowserActivate"
+                         Background="{StaticResource KashiraBg}" Margin="6,0,6,6"
+                         ToolTip.Tip="더블클릭: 폴더 열기 / 에셋 선택">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:BrowserItemVM">
+                            <StackPanel Width="96" Margin="2" ToolTip.Tip="{Binding Kind}">
+                                <Border Width="88" Height="88" Background="{StaticResource KashiraPanel}" CornerRadius="4">
+                                    <Grid>
+                                        <Image Source="{Binding Thumb}" IsVisible="{Binding HasThumb}" Stretch="Uniform" Margin="4"
+                                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                        <PathIcon Data="{Binding Icon, Converter={StaticResource IconKind}}" Width="38" Height="38"
+                                                  IsVisible="{Binding !HasThumb}" Foreground="{StaticResource KashiraTextDim}"/>
+                                    </Grid>
+                                </Border>
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" TextAlignment="Center"
+                                           MaxWidth="88" Foreground="{StaticResource KashiraText}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
 
         <!-- 상태바 -->
-        <Border Grid.Row="4" Background="{StaticResource KashiraPanel}" Padding="12,6">
+        <Border Grid.Row="5" Background="{StaticResource KashiraPanel}" Padding="12,6">
             <TextBlock Text="{Binding Status}" Foreground="{StaticResource KashiraTextDim}"/>
         </Border>
     </Grid>

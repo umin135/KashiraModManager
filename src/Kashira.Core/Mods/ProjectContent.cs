@@ -40,6 +40,36 @@ public static class ProjectContent
     public static ContentNode LegacyRoot(KtmodProject project)
         => BuildNode("Content_Legacy", project.ContentLegacyDir);
 
+    /// <summary>언리얼식 Content Browser 좌측: 폴더"만" 트리(파일 제외). 루트 = Content/(+Content_Legacy/).</summary>
+    public static List<ContentNode> FolderRoots(KtmodProject project, bool content, bool legacy)
+    {
+        var roots = new List<ContentNode>();
+        if (content) roots.Add(FolderOnlyNode("Content", project.ContentDir));
+        if (legacy) roots.Add(FolderOnlyNode("Content_Legacy", project.ContentLegacyDir));
+        return roots;
+    }
+
+    private static ContentNode FolderOnlyNode(string name, string dir)
+    {
+        var children = new List<ContentNode>();
+        if (Directory.Exists(dir))
+            foreach (var sub in Directory.EnumerateDirectories(dir).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+                children.Add(FolderOnlyNode(Path.GetFileName(sub), sub));
+        return new ContentNode(name, dir, true, children);
+    }
+
+    /// <summary>언리얼식 Content Browser 우측: 한 폴더의 직속 항목(하위폴더 + 파일, 재귀 X).</summary>
+    public static List<ContentNode> FolderItems(string dir)
+    {
+        var items = new List<ContentNode>();
+        if (!Directory.Exists(dir)) return items;
+        foreach (var sub in Directory.EnumerateDirectories(dir).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+            items.Add(new ContentNode(Path.GetFileName(sub), sub, true, new()));
+        foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            items.Add(new ContentNode(Path.GetFileName(file), file, false, new()));
+        return items;
+    }
+
     private static ContentNode BuildNode(string name, string dir)
     {
         var children = new List<ContentNode>();
