@@ -36,6 +36,10 @@ public static class ProjectContent
     public static ContentNode ContentRoot(KtmodProject project)
         => BuildNode("Content", project.ContentDir);
 
+    /// <summary>Content_Legacy/ 를 루트로 한 파일 트리(통합 브라우저용).</summary>
+    public static ContentNode LegacyRoot(KtmodProject project)
+        => BuildNode("Content_Legacy", project.ContentLegacyDir);
+
     private static ContentNode BuildNode(string name, string dir)
     {
         var children = new List<ContentNode>();

@@ -4,7 +4,8 @@
         x:Class="Kashira.Editor.Views.MainWindow"
         x:DataType="vm:EditorShellViewModel"
         x:CompileBindings="True"
-        Width="960" Height="640"
+        Width="1280" Height="820"
+        MinWidth="1000" MinHeight="640"
         Title="Kashira Editor"
         Background="{StaticResource KashiraBg}">
 
