@@ -54,13 +54,6 @@ public static class CostumeAuthorInstaller
         var dm = set.DisplaysetModel(tgt);
         dm.SetU32(Doa6SingletonSet.P_Dm_Grp, fkGrp);
         dm.SetU32(Doa6SingletonSet.P_Dm_Mtl, fkMtl);
-
-        // base ktid: 소스(MaterialTemplate)의 base ktid FK 로 타겟 DM.TBC 를 repoint(canonical 참조, 온라인 안전).
-        //   → MI=0(base 폴백) 슬롯이 소스 base 텍스처로 렌더된다. base 텍스처 편집은 이후 과제.
-        uint srcBaseKtid = mod.MaterialTemplateCostume is { } baseTc
-            ? set.ResolveAssets(set.CostumeOid(baseTc)).BaseKtid : tgtAssets.BaseKtid;
-        if (srcBaseKtid != 0 && set.Ce.Find(tgtAssets.TbcObj) is { } tbc)
-            tbc.SetU32(Doa6SingletonSet.P_Tbc_Ktid, srcBaseKtid);
         set.MarkDirty(Doa6SingletonSet.CeFk);
 
         // 2) 텍스처 파일 신규등록(@이름 → g1t FK, 한 번씩만)
@@ -77,22 +70,33 @@ public static class CostumeAuthorInstaller
         var templateMat = mod.MaterialTemplateCostume is { } tc
             ? set.ResolveMaterial(set.CostumeOid(tc)) : tgtMat;
         var tgtVar0 = TargetVar0Mbes(templateMat);
-        var matMbe = new uint[numMat][]; // matMbe[m][variation] = MBE oid (0 = base 폴백)
+        int tsc = Math.Max(1, templateMat.SlotCount);
+        int tcvn = Math.Max(1, templateMat.Cvn);
+        var matMbe = new uint[numMat][]; // matMbe[m][variation] = MBE oid
         for (int m = 0; m < numMat; m++)
         {
-            uint template = tgtVar0[Math.Min(m, tgtVar0.Length - 1)];
             var mat = mod.Materials[m];
             int variations = Math.Max(1, mat.Slots.Count);
             matMbe[m] = new uint[variations];
+            uint baseMbe = 0; // 첫 비-null(기본) 변형의 MBE — null 변형은 이걸 재사용(=base)
             for (int v = 0; v < variations; v++)
             {
-                // null 변형 = base 폴백 → MBE 생성 안 함(MI=0). base ktid 로 렌더.
-                if (mat.Slots[v] is not { } slots) { matMbe[m][v] = 0; continue; }
+                if (mat.Slots[v] is not { } slots) { matMbe[m][v] = 0; continue; } // null → 아래서 base 채움
+                // 변형별 네이티브 MBE 를 템플릿으로 클론 → 올바른 KTS(슬롯→타입 스키마)/MatIx/슬롯구조 확보.
+                //   (변형마다 KTS 가 다를 수 있어 var0 고정 클론은 var1~ 을 깨뜨림.) 없으면 var0 로 폴백.
+                int srcV = Math.Min(v, tcvn - 1);
+                uint template = (srcV * tsc + m < templateMat.Mi.Length && templateMat.Mi[srcV * tsc + m] != 0)
+                    ? templateMat.Mi[srcV * tsc + m]
+                    : tgtVar0[Math.Min(m, tgtVar0.Length - 1)];
                 var chain = MaterialChainFactory.Create(set, template, ResolveSlots(slots, texFk),
                                                         requireAllSlots: mod.RequireAllSlots);
                 matMbe[m][v] = chain.MbeOid;
                 newAssets.AddRange(chain.NewAssets);
+                if (baseMbe == 0) baseMbe = chain.MbeOid;
             }
+            // null(base 폴백) 변형을 기본 변형 MBE 로 채운다 → MI 를 꽉 채워 base ktid 폴백 경로 의존 제거.
+            for (int v = 0; v < variations; v++)
+                if (matMbe[m][v] == 0) matMbe[m][v] = baseMbe;
         }
 
         // 4) MI 행렬(numMat × 타겟 변형수, 클램프; 0=base 폴백) + MRNH + nameArr 배선
