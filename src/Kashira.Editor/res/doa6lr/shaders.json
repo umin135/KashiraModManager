@@ -1,0 +1,84 @@
+{
+  "game": "doa6lr",
+  "schema": 1,
+  "note": "셰이더 타입 카탈로그. key=matB(sid 셰이더-타입 노드). name 비면 미라벨(에디터가 값 표시). 커뮤니티/import 확장.",
+  "shaders": {
+    "0x4bf9b7f1": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x2d23bc66"
+      ],
+      "note": ""
+    },
+    "0xacb28496": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x1fe387e1"
+      ],
+      "note": ""
+    },
+    "0x2db3efcd": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0xdc694116"
+      ],
+      "note": ""
+    },
+    "0x3ba0caa9": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x795e78b4"
+      ],
+      "note": ""
+    },
+    "0xbf231c18": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x8688ee51"
+      ],
+      "note": ""
+    },
+    "0x25e89344": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x37639ff9"
+      ],
+      "note": ""
+    },
+    "0x4d089c67": {
+      "name": "",
+      "occ": 4,
+      "meshTypes": [
+        "rigid"
+      ],
+      "exampleMeshes": [
+        "0x68659d5c"
+      ],
+      "note": ""
+    }
+  }
+}

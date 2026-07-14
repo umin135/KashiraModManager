@@ -208,6 +208,38 @@
                             </ScrollViewer>
                         </DockPanel>
 
+                        <!-- 0x10009: 메시 계층(결정 B) — 메시(=셰이더) → 슬롯(=텍스처). 읽기 전용(현재). -->
+                        <DockPanel IsVisible="{Binding HasMeshList}">
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="100,56,150,*" Margin="4,0,4,4">
+                                <TextBlock Grid.Column="0" Text="Mesh" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="1" Text="Type" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="2" Text="Slots" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                                <TextBlock Grid.Column="3" Text="Shader" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
+                            </Grid>
+                            <ScrollViewer>
+                                <ItemsControl ItemsSource="{Binding Meshes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MeshRowVM">
+                                            <Grid ColumnDefinitions="100,56,150,*" Margin="0,0,0,3">
+                                                <TextBlock Grid.Column="0" Text="{Binding Hash}" Foreground="{StaticResource KashiraText}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="{StaticResource KashiraTextDim}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Slots}" Foreground="{StaticResource KashiraTextDim}" VerticalAlignment="Center"/>
+                                                <ComboBox Grid.Column="3" ItemsSource="{Binding ShaderOptions}"
+                                                          SelectedItem="{Binding SelectedShader}" IsEnabled="{Binding CanEditShader}"
+                                                          HorizontalAlignment="Stretch" Padding="6,2" MinHeight="24" FontSize="12">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:ShaderChoiceVM">
+                                                            <TextBlock Text="{Binding Display}" Foreground="#d8b26a"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+
                         <!-- 0x10003: 재질 타입(nMtrID) 편집 -->
                         <DockPanel IsVisible="{Binding HasG1mProps}">
                             <Border DockPanel.Dock="Top" Background="{StaticResource KashiraPanel}" CornerRadius="4" Padding="10,7" Margin="0,0,0,10">

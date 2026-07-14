@@ -30,10 +30,16 @@ public static class CostumeAuthorInstaller
         bool RequireAllSlots = false,
         string? MaterialTemplateCostume = null,
         IReadOnlyDictionary<int, string>? BaseKtid = null,
-        IReadOnlyList<Formats.KtsFile.Slot>? BaseKts = null);
+        IReadOnlyList<Formats.KtsFile.Slot>? BaseKts = null,
+        IReadOnlyDictionary<uint, uint>? ShaderOverrides = null);   // 메시해시 → 셰이더 matB (사이드카)
 
-    /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 목록을 반환(누적 가능).</summary>
-    public static IReadOnlyList<CostumeOverride.NewAsset> Apply(Doa6SingletonSet set, AuthoredCostume mod)
+    /// <summary>Apply 결과: 신규 에셋 + Character.sid 등록(셰이더 오버라이드).</summary>
+    public sealed record ApplyResult(
+        IReadOnlyList<CostumeOverride.NewAsset> Assets,
+        IReadOnlyList<SidInstaller.Registration> SidRegs);
+
+    /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 + sid 등록을 반환(누적 가능).</summary>
+    public static ApplyResult Apply(Doa6SingletonSet set, AuthoredCostume mod)
     {
         uint tgt = set.CostumeOid(mod.TargetCostume);
         var tgtMat = set.ResolveMaterial(tgt);
@@ -51,11 +57,29 @@ public static class CostumeAuthorInstaller
 
         var newAssets = new List<CostumeOverride.NewAsset>();
 
+        // 0) 셰이더 오버라이드(사이드카): fresh 해시 할당 → g1m 메시그룹 재작성 + Character.sid 등록(도너 셰이더).
+        //    텍스처는 유지(메시 g1m 재질 불변), 셰이더만 변경·코스튬별 격리(전역 공유 해시 불변).
+        var sidRegs = new List<SidInstaller.Registration>();
+        var g1mBytes = mod.G1m;
+        if (mod.ShaderOverrides is { Count: > 0 } shaderOv
+            && set.Extractor.Extract(CharacterSid.FileKtid) is { } sidBytes)
+        {
+            var catalog = ShaderCatalog.LoadFile(Path.Combine(AppContext.BaseDirectory, "res", "doa6lr", "shaders.json"));
+            var plan = ShaderOverridePlan.Build(shaderOv, catalog, CharacterSid.Parse(sidBytes));
+            if (plan.RenameMap.Count > 0)
+            {
+                var gc = G1mContainer.Parse(g1mBytes);
+                G1mGeometry.RenameMeshGroups(gc, plan.RenameMap);
+                g1mBytes = gc.Build();
+            }
+            sidRegs.AddRange(plan.SidRegs);
+        }
+
         // 1) 에셋 배선:
         //    - g1m: 새 FK 금지(온라인 검증) → 타겟 canonical g1m FK 에 mod 메시 in-place 교체(raw redirect). DM.g1m 유지.
         //    - grp/mtl: 새 FK 신규등록 + DM repoint (온라인 미검증 → 안전).
         uint fkGrp = set.AllocFk(), fkMtl = set.AllocFk();
-        newAssets.Add(new(tgtAssets.G1m, mod.G1m, "g1m")); // 기존 FK → redirect
+        newAssets.Add(new(tgtAssets.G1m, g1mBytes, "g1m")); // 재작성된 g1m (셰이더 오버라이드 반영)
         newAssets.Add(new(fkGrp, mod.Grp, "grp"));
         newAssets.Add(new(fkMtl, mod.Mtl, "mtl"));
         var dm = set.DisplaysetModel(tgt);
@@ -99,7 +123,7 @@ public static class CostumeAuthorInstaller
             set.MarkDirty(Doa6SingletonSet.Ce1CommonFk);
 
             BuildBaseKtidChain(set, mod, tgtAssets, texFk, newAssets); // base ktid 도 생성(inert)
-            return newAssets;
+            return new ApplyResult(newAssets, sidRegs);
         }
 
         // 3) 재질별 MBE 체인 생성(변형별). 템플릿 = MaterialTemplateCostume(있으면, 예: 번들 소스 코스튬)
@@ -152,7 +176,7 @@ public static class CostumeAuthorInstaller
         set.CharSetting(tgt).SetU32Array(Doa6SingletonSet.P_Cs_Mi, mi);
         set.MarkDirty(Doa6SingletonSet.Ce1CommonFk);
 
-        return newAssets;
+        return new ApplyResult(newAssets, sidRegs);
     }
 
     /// <summary>타겟의 var0(베이스 변형) MBE 열 = MI 앞 slotCount 개.</summary>

@@ -251,10 +251,16 @@ public sealed class KtmodPackage
             return b is null ? null : Formats.KtsFile.FromJson(System.Text.Encoding.UTF8.GetString(b));
         }
 
+        // 셰이더 오버라이드 사이드카(<g1m>.shaders.json) — 있으면 파싱(메시해시 → matB)
+        IReadOnlyDictionary<uint, uint>? shaderOverrides = null;
+        if (m.Mesh.G1m is { } g1mRef
+            && files.TryGetValue(g1mRef.TrimStart('@') + ".shaders.json", out var sce))
+            shaderOverrides = Doa6.ShaderOverrideSidecar.ParseJson(System.Text.Encoding.UTF8.GetString(ReadAll(sce)));
+
         return new Doa6.CostumeAuthorInstaller.AuthoredCostume(
             m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles,
             RequireAllSlots: false, MaterialTemplateCostume: m.MaterialTemplate, BaseKtid: m.BaseKtid,
-            BaseKts: ResolveKts(m.BaseKts));
+            BaseKts: ResolveKts(m.BaseKts), ShaderOverrides: shaderOverrides);
     }
 
     /// <summary>Content/ 아래 모든 비-json 파일을 leaf 파일명 → 엔트리로(@참조 전역 스코프).</summary>

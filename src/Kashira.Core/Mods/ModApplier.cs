@@ -26,6 +26,14 @@ public static class ModApplier
             reps.Add(new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath), e.Ext));
         int debugCount = reps.Count;
 
+        // DebugMods/sid.json — Character.sid 셰이더 등록 드라이버(최소 검증). pristine sid + 도너 복사 → Replacement.
+        var sidRegs = SidInstaller.ReadJson(Path.Combine(ws.DebugModsDir, "sid.json"));
+        if (sidRegs.Count > 0)
+        {
+            using var ex = Formats.AssetExtractor.Open(ws);
+            if (SidInstaller.BuildReplacement(ex, sidRegs) is { } sidRep) reps.Add(sidRep);
+        }
+
         int ktmodCount = 0;
         var incompatible = new List<string>();
         var swaps = new List<CostumeInstaller.Swap>();

@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Kashira.Core.Doa6;
 using Kashira.Core.Formats;
 using Kashira.Core.Games;
 using Kashira.Core.Mods;
@@ -76,6 +77,13 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     // g1m 서브메시 분석(0x10008 선택 시, 읽기)
     public ObservableCollection<SubmeshRowVM> Submeshes { get; } = new();
     [ObservableProperty] private bool _hasSubmeshList;
+
+    // g1m 메시 계층(0x10009 MeshGroup 선택 시, 결정 B: 메시=셰이더 → 슬롯=텍스처)
+    public ObservableCollection<MeshRowVM> Meshes { get; } = new();
+    [ObservableProperty] private bool _hasMeshList;
+    private CharacterSid? _sidCache; private bool _sidTried;
+    private ShaderCatalog? _catalogCache;
+    private ShaderOverrideSidecar? _meshSidecar; private string? _meshG1mPath;
 
     // 변형 추가/삭제
     [ObservableProperty] private string _variationInfo = "";
@@ -361,6 +369,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         G1mMaterials.Clear();
         HasG1mSection = false; _selG1mSectionId = null; _selG1mChunkIndex = null; G1mSectionInfo = "";
         HasSubmeshList = false; Submeshes.Clear();
+        HasMeshList = false; Meshes.Clear();
 
         if (value?.Material is { } gm)
         {
@@ -377,6 +386,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             G1mSectionInfo = $"{value.Title.TrimStart(' ', '·').Trim()}  ·  {size}";
             if (value.G1mSectionId == G1mMaterialProps.SectionId) BuildG1mPropsEditor();
             else if (value.G1mSectionId == 0x10008) BuildSubmeshList();
+            else if (value.G1mSectionId == 0x10009) BuildMeshList();
         }
         else
         {
@@ -471,6 +481,57 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             HasSubmeshList = Submeshes.Count > 0;
         }
         catch { HasSubmeshList = false; }
+    }
+
+    /// <summary>g1m 0x10009(MeshGroup) → 메시 계층(메시=셰이더 → 슬롯). sid 연결되면 각 메시 셰이더 표시.</summary>
+    private void BuildMeshList()
+    {
+        if (_currentAssetPath is null) return;
+        try
+        {
+            var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
+            var sid = LoadSid();
+            var catalog = LoadShaderCatalog();
+            _meshG1mPath = _currentAssetPath;
+            _meshSidecar = ShaderOverrideSidecar.LoadFor(_currentAssetPath);   // 셰이더 지정 사이드카
+            foreach (var m in CostumeMeshModel.Build(c, sid))
+                Meshes.Add(new MeshRowVM(m, catalog, _meshSidecar.Get(m.NameHash), OnMeshShaderChanged));
+            HasMeshList = Meshes.Count > 0;
+        }
+        catch { HasMeshList = false; }
+    }
+
+    /// <summary>메시 셰이더 지정 변경 → 사이드카(&lt;g1m&gt;.shaders.json) 저장. matB null = 원본(오버라이드 제거).</summary>
+    private void OnMeshShaderChanged(uint meshHash, uint? matB)
+    {
+        if (_meshSidecar is null || _meshG1mPath is null) return;
+        if (matB is { } v) _meshSidecar.Set(meshHash, v); else _meshSidecar.Clear(meshHash);
+        try
+        {
+            _meshSidecar.SaveFor(_meshG1mPath);
+            Status = $"셰이더 지정: @{meshHash:X8} → {(matB is { } m ? $"0x{m:x8}" : "원본")}";
+        }
+        catch (Exception ex) { Status = $"셰이더 저장 실패: {ex.Message}"; }
+    }
+
+    /// <summary>셰이더 카탈로그(res/&lt;game&gt;/shaders.json) — 1회 캐시. 없으면 빈 카탈로그.</summary>
+    private ShaderCatalog LoadShaderCatalog()
+        => _catalogCache ??= ShaderCatalog.LoadForGame(Path.Combine(AppContext.BaseDirectory, "res"), _project.TargetGame);
+
+    /// <summary>연결된 게임의 pristine Character.sid — best-effort, 1회 캐시. 미연결/실패 시 null.</summary>
+    private CharacterSid? LoadSid()
+    {
+        if (_sidTried) return _sidCache;
+        _sidTried = true;
+        try
+        {
+            var g = GameLibrary.Load().FirstOrDefault(x => GameCatalog.Matches(x, _project.TargetGame));
+            if (g is null) return null;
+            using var ex = AssetExtractor.Open(new GameWorkspace(g));
+            if (ex.Extract(CharacterSid.FileKtid) is { } bytes) _sidCache = CharacterSid.Parse(bytes);
+        }
+        catch { /* best-effort */ }
+        return _sidCache;
     }
 
     /// <summary>g1m 0x10003 → 재질별 nMtrID 편집기 채우기.</summary>

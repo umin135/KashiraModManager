@@ -30,4 +30,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Kashira.Core\Kashira.Core.csproj" />
   </ItemGroup>
+
+  <!-- 셰이더 카탈로그 res/ — Editor 와 공유(설치 시 카탈로그 로드). -->
+  <ItemGroup>
+    <None Include="..\Kashira.Editor\res\**\*" Link="res\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

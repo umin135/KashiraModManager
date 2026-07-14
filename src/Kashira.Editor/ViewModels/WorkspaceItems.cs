@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Kashira.Core.Doa6;
 using Kashira.Core.Formats;
 using Kashira.Core.Mods;
 using Kashira.Editor.Services;
@@ -97,6 +98,55 @@ public sealed class SubmeshRowVM
         Verts = s.NumVerts.ToString("N0");
         Tris = s.Tris.ToString("N0");
         Cloth = s.ClothId == 0 ? "" : $"cloth{s.ClothId}";
+    }
+}
+
+/// <summary>셰이더 드롭다운 항목(= 카탈로그 엔트리 또는 "원본"). MatB=null → 원본 유지(오버라이드 없음).</summary>
+public sealed record ShaderChoiceVM(uint? MatB, string Display);
+
+/// <summary>메시 계층(결정 B) 한 행 — 메시(=셰이더) → 슬롯(=텍스처). 리지드는 셰이더 편집 가능.</summary>
+public sealed partial class MeshRowVM : ObservableObject
+{
+    public string Hash { get; }        // "@1FE387E1" — sid/grp 조인 키
+    public string Type { get; }        // rigid/NUNO/NUNV/SOFT
+    public string Slots { get; }       // "mat0, mat1"
+    public bool CanEditShader { get; } // 리지드만 셰이더(matB) 편집
+
+    public IReadOnlyList<ShaderChoiceVM> ShaderOptions { get; }
+    [ObservableProperty] private ShaderChoiceVM _selectedShader;
+
+    private readonly uint _meshHash;
+    private readonly System.Action<uint, uint?>? _onChanged;
+    private bool _suppress;
+
+    public MeshRowVM(CostumeMeshModel.Mesh m, ShaderCatalog? catalog, uint? overrideMatB,
+                     System.Action<uint, uint?>? onShaderChanged)
+    {
+        _meshHash = m.NameHash;
+        _onChanged = onShaderChanged;
+        Hash = $"@{m.NameHash:X8}";
+        Type = m.MeshType switch { 0 => "rigid", 1 => "NUNO", 2 => "NUNV", 4 => "SOFT", var t => t.ToString() };
+        Slots = m.Slots.Count == 0 ? "-" : string.Join(", ", m.Slots.Select(s => $"mat{s.MaterialIndex}"));
+        CanEditShader = m.MeshType == 0;
+
+        var opts = new List<ShaderChoiceVM>();
+        string orig = m.ShaderMatB is { } ob ? $"(원본) {catalog?.Display(ob) ?? $"0x{ob:x8}"}" : "(원본)";
+        opts.Add(new ShaderChoiceVM(null, orig));                       // 첫 항목 = 원본(오버라이드 없음)
+        if (CanEditShader && catalog is not null)
+            foreach (var e in catalog.All) opts.Add(new ShaderChoiceVM(e.MatB, e.Display));
+        else if (!CanEditShader)
+            opts[0] = new ShaderChoiceVM(null, "(physics)");
+        ShaderOptions = opts;
+
+        _selectedShader = overrideMatB is { } o
+            ? opts.FirstOrDefault(c => c.MatB == o) ?? opts[0]
+            : opts[0];
+    }
+
+    partial void OnSelectedShaderChanged(ShaderChoiceVM value)
+    {
+        if (_suppress || !CanEditShader) return;
+        _onChanged?.Invoke(_meshHash, value.MatB);                      // null → 오버라이드 제거(원본)
     }
 }
 

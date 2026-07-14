@@ -209,6 +209,81 @@ public static class G1mGeometry
         return map;
     }
 
+    /// <summary>메시그룹 엔트리 = 이름해시(@XXXXXXXX) + meshType(0리지드/1NUNO/2NUNV/4SOFT) + extid + 서브메시 인덱스들.</summary>
+    public sealed record MeshGroup(uint NameHash, int MeshType, uint ExtId, IReadOnlyList<int> Submeshes);
+
+    /// <summary>
+    /// MeshGroups(0x10009) → 엔트리 목록. 이름해시 = sid/grp 조인 키.
+    /// 한 이름해시가 여러 엔트리(LOD/패스)로 나뉠 수 있음(호출측에서 그룹핑).
+    /// </summary>
+    public static IReadOnlyList<MeshGroup> ParseMeshGroups(G1mContainer c)
+    {
+        var list = new List<MeshGroup>();
+        var s = c.FindSection(0x10009);
+        if (s is null) return list;
+        var d = s.Inner;
+        int p = 0x20;
+        while (p < d.Length && d[p] != 0x40) p += 4;
+        while (p + 0x1C <= d.Length && d[p] == 0x40)
+        {
+            uint hash = ParseNameHash(d, p);
+            int meshType = U16(d, p + 0x10);
+            uint extId = (uint)U(d, p + 0x14);
+            int idxc = U(d, p + 0x18);
+            var subs = new List<int>(idxc);
+            for (int k = 0; k < idxc && p + 0x1C + k * 4 + 4 <= d.Length; k++)
+                subs.Add(U(d, p + 0x1C + k * 4));
+            list.Add(new MeshGroup(hash, meshType, extId, subs));
+            p += 0x1C + idxc * 4;
+        }
+        return list;
+    }
+
+    /// <summary>메시그룹 이름 "@XXXXXXXX"(대문자 hex) → u32 해시. 파싱 실패 시 0.</summary>
+    private static uint ParseNameHash(byte[] d, int p)
+    {
+        uint v = 0;
+        for (int k = 1; k <= 8; k++)
+        {
+            int cc = d[p + k];
+            int digit = cc is >= (byte)'0' and <= (byte)'9' ? cc - '0'
+                      : cc is >= (byte)'A' and <= (byte)'F' ? cc - 'A' + 10
+                      : cc is >= (byte)'a' and <= (byte)'f' ? cc - 'a' + 10 : -1;
+            if (digit < 0) return 0;
+            v = (v << 4) | (uint)digit;
+        }
+        return v;
+    }
+
+    /// <summary>메시그룹 이름해시 재작성(size-preserving) — {old→new}. 반환=바뀐 엔트리 수. fresh 해시 격리용.</summary>
+    public static int RenameMeshGroups(G1mContainer c, IReadOnlyDictionary<uint, uint> map)
+    {
+        var s = c.FindSection(0x10009);
+        return s is null ? 0 : RenameInSection(s.Inner, map);
+    }
+
+    /// <summary>0x10009 inner 바이트에서 메시그룹 이름해시를 제자리 재작성. 순수 함수(테스트용). 크기 불변.</summary>
+    public static int RenameInSection(byte[] d, IReadOnlyDictionary<uint, uint> map)
+    {
+        int p = 0x20, count = 0;
+        while (p < d.Length && d[p] != 0x40) p += 4;
+        while (p + 0x1C <= d.Length && d[p] == 0x40)
+        {
+            uint hash = ParseNameHash(d, p);
+            if (map.TryGetValue(hash, out var nh)) { WriteNameHash(d, p, nh); count++; }
+            int idxc = U(d, p + 0x18);
+            p += 0x1C + idxc * 4;
+        }
+        return count;
+    }
+
+    /// <summary>메시그룹 이름 "@XXXXXXXX"(대문자 hex) 8글자를 제자리 덮어쓰기.</summary>
+    private static void WriteNameHash(byte[] d, int p, uint hash)
+    {
+        string hex = hash.ToString("X8");
+        for (int k = 0; k < 8; k++) d[p + 1 + k] = (byte)hex[k];
+    }
+
     /// <summary>JointPalettes(0x10006): 팔레트별 엔트리 수.</summary>
     public static IReadOnlyList<int> ParsePaletteSizes(G1mContainer c)
     {

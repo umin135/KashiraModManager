@@ -30,4 +30,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Kashira.Core\Kashira.Core.csproj" />
   </ItemGroup>
+
+  <!-- 셰이더 카탈로그 등 res/ 를 출력 옆으로 복사(에디터가 AppContext.BaseDirectory/res 에서 로드). -->
+  <ItemGroup>
+    <None Include="res\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

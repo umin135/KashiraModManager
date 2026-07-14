@@ -32,8 +32,18 @@ public static class CostumeInstaller
 
         foreach (var s in swaps)
             AddNew(CostumeOverride.Apply(set, s.TargetCostume, s.SourceCostume));
+
+        var sidRegs = new List<SidInstaller.Registration>();
         foreach (var a in authored ?? Enumerable.Empty<CostumeAuthorInstaller.AuthoredCostume>())
-            AddNew(CostumeAuthorInstaller.Apply(set, a));
+        {
+            var r = CostumeAuthorInstaller.Apply(set, a);
+            AddNew(r.Assets);
+            sidRegs.AddRange(r.SidRegs);                 // 셰이더 오버라이드 등록 누적
+        }
+
+        // Character.sid 셰이더 등록(오버라이드) = 리다이렉트 (pristine + 전체 등록, 멱등)
+        if (SidInstaller.BuildReplacement(set.Extractor, sidRegs) is { } sidRep)
+            reps.Add(sidRep);
 
         // 누적 편집된 싱글톤 DB(CE/CE1Common/ME) = 리다이렉트 (한 번씩만, 병합된 최종 바이트)
         foreach (var (fk, bytes) in set.DirtyBytes())
