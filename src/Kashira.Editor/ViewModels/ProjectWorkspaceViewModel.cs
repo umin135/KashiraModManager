@@ -756,7 +756,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         try
         {
             var r = BundleImporter.Import(new GameWorkspace(game), _project, NewSetName.Trim(), dir, NewTargetCostume.Trim());
-            Status = $"임포트 완료: 소스 {r.SourceCostume} → 재질 {r.Materials} · 변형 {r.Variations} · 텍스처 {r.Textures}"
+            Status = $"임포트 완료: 소스 {r.SourceCostume} → 재질 {r.Materials} · 변형 {r.Variations} · 텍스처 {r.Textures} · 셰이더 {r.Shaders}"
                      + (r.MissingG1t > 0 ? $" (미매칭 g1t {r.MissingG1t})" : "");
             Refresh();
         }

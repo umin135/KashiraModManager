@@ -23,7 +23,7 @@ namespace Kashira.Core.Mods;
 public static class BundleImporter
 {
     /// <summary>포팅 결과 요약(UI 상태 표시용).</summary>
-    public sealed record ImportResult(string SourceCostume, int Materials, int Variations, int Textures, int MissingG1t);
+    public sealed record ImportResult(string SourceCostume, int Materials, int Variations, int Textures, int MissingG1t, int Shaders = 0);
 
     /// <summary>
     /// 번들 폴더를 project 의 Content/&lt;setName&gt;/ 로 포팅하고 매니페스트를 생성.
@@ -94,11 +94,28 @@ public static class BundleImporter
             File.WriteAllText(Path.Combine(setDir, $"{baseName}.mat{m}.kts.json"),
                 KtsFile.ToJson(KtsFile.SlotsFromG1mMaterial(g1mMats[m])));
 
-        // 5) 매니페스트(base ktid + 변형별 MPR + KTS 참조)
-        File.WriteAllText(Path.Combine(project.ContentDir, baseName + ".json"),
-            BuildManifest(targetCostume, sourceCostume, baseName, Math.Max(1, cvn), baseSlots, perMat, g1mMats.Count));
+        // 4c) 셰이더 타입(sid matB): 소스 코스튬의 재질별 셰이더를 전역 sid 에서 캡처(재질 인스턴스 완결).
+        var matShaders = ResolveMaterialShaders(g1m, ex);
 
-        return new ImportResult(sourceCostume, sc, cvn, neededNames.Count, missing.Count);
+        // 5) 매니페스트(base ktid + 변형별 MPR + KTS 참조 + 셰이더 타입)
+        File.WriteAllText(Path.Combine(project.ContentDir, baseName + ".json"),
+            BuildManifest(targetCostume, sourceCostume, baseName, Math.Max(1, cvn), baseSlots, perMat, g1mMats.Count, matShaders));
+
+        return new ImportResult(sourceCostume, sc, cvn, neededNames.Count, missing.Count, matShaders.Count);
+    }
+
+    /// <summary>
+    /// 소스 코스튬의 재질별 셰이더 타입(sid matB)을 해석 → { g1m 재질 인덱스 → matB }.
+    /// 전역 Character.sid + 소스 g1m 으로 메시 계층(<see cref="CostumeMeshModel"/>)을 만들어, 리지드 메시의
+    /// ShaderMatB 를 그 메시가 쓰는 재질들에 역-팬아웃(첫 메시 우선=결정적, <see cref="MaterialShaderFanout"/> 의 역).
+    /// 소프트/NUNO(비-리지드) 및 미등록 메시는 셰이더 없음(제외). sid 없으면 빈 맵(캡처 생략).
+    /// </summary>
+    private static IReadOnlyDictionary<int, uint> ResolveMaterialShaders(byte[] g1m, AssetExtractor ex)
+    {
+        if (ex.Extract(CharacterSid.FileKtid) is not { } sidBytes)
+            return new Dictionary<int, uint>();                       // sid 없음 → 캡처 생략
+        var meshes = CostumeMeshModel.Build(G1mContainer.Parse(g1m), CharacterSid.Parse(sidBytes));
+        return MaterialShaderFanout.Capture(meshes);                  // 메시 셰이더 → 재질별 캡처(Expand 의 역)
     }
 
     /// <summary>MBE → (KTS 로 슬롯→카테고리) + MPR ktid(슬롯→g1t) → **카테고리 → g1t 파일명**. mbe==0 이면 null(base 폴백).</summary>
@@ -155,7 +172,8 @@ public static class BundleImporter
     }
 
     private static string BuildManifest(string target, string source, string baseName, int cvn,
-        Dictionary<int, string> baseSlots, Dictionary<int, string>?[][] perMat, int g1mMatCount)
+        Dictionary<int, string> baseSlots, Dictionary<int, string>?[][] perMat, int g1mMatCount,
+        IReadOnlyDictionary<int, uint> matShaders)
     {
         var sb = new StringBuilder();
         sb.Append("{\n");
@@ -174,12 +192,14 @@ public static class BundleImporter
         for (int m = 0; m < perMat.Length; m++)
         {
             string kts = m < g1mMatCount ? $", \"Kts\": \"@{baseName}.mat{m}.kts.json\"" : "";
+            // 셰이더 타입(sid matB): 소스에서 캡처된 재질만. 텍스처+KTS+셰이더타입 = 재질 인스턴스 완결.
+            string shader = matShaders.TryGetValue(m, out var mb) ? $", \"Shader\": \"0x{mb:X8}\"" : "";
             // 변형 전부 비-null 이고 동일 → constant. 하나라도 null(base 폴백)이거나 다르면 variation.
             if (ConstantAcrossVariations(perMat[m]))
-                sb.Append("    { \"Mode\": \"constant\", \"Textures\": " + Slots(perMat[m][0]!) + kts + " }");
+                sb.Append("    { \"Mode\": \"constant\", \"Textures\": " + Slots(perMat[m][0]!) + kts + shader + " }");
             else
                 sb.Append("    { \"Mode\": \"variation\", \"Variations\": ["
-                          + string.Join(", ", perMat[m].Select(s => s is null ? "null" : Slots(s))) + "]" + kts + " }");
+                          + string.Join(", ", perMat[m].Select(s => s is null ? "null" : Slots(s))) + "]" + kts + shader + " }");
             sb.Append(m < perMat.Length - 1 ? ",\n" : "\n");
         }
         sb.Append("  ]\n}\n");

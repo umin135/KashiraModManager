@@ -35,6 +35,12 @@ public static class ShaderOverridePlan
         {
             uint matB = overrides[mesh];
 
+            // ★이미 이 셰이더를 가진 메시는 오버라이드 불요(no-op). 번들 import 는 소스의 네이티브 셰이더를
+            //   그대로 캡처하므로, 편집 없이 설치하면 여기서 걸러져 불필요한 fresh 해시 재작성(→ 렌더 게이트
+            //   불일치로 메시 invisible) 을 막는다. 셰이더를 실제로 바꾼 경우만(matB ≠ 현재) rename 진행.
+            var current = sid.GetChildren(mesh);
+            if (current is { Length: >= 2 } && current[1] == matB) continue;
+
             // 도너 해석: 카탈로그 우선, 없거나 무효면 sid 에서 그 matB 쓰는 메시 스캔(직접입력 matB 지원).
             uint? donor = catalog.Get(matB)?.DonorMeshHash;
             if (donor is not { } d0 || !sid.IsRegistered(d0)) donor = sid.FindDonorFor(matB);

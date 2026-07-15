@@ -15,6 +15,23 @@ public static class MaterialShaderFanout
 {
     public sealed record Result(IReadOnlyDictionary<uint, uint> MeshShaders, IReadOnlyList<string> Warnings);
 
+    /// <summary>
+    /// <see cref="Expand"/> 의 역: 메시별 셰이더(sid matB)를 그 메시가 쓰는 <b>재질</b>로 캡처 → { 재질 인덱스 → matB }.
+    /// 리지드(meshType 0) + 셰이더 등록된 메시만. 한 재질을 여러 메시가 서로 다른 셰이더로 쓰면 <b>첫 메시(등장 순서) 우선</b>.
+    /// 번들 import 시 소스 코스튬의 재질별 셰이더 타입을 매니페스트(Shader)로 캡처하는 데 쓴다.
+    /// </summary>
+    public static IReadOnlyDictionary<int, uint> Capture(IReadOnlyList<CostumeMeshModel.Mesh> meshes)
+    {
+        var shaders = new Dictionary<int, uint>();
+        foreach (var m in meshes)                          // 등장 순서 = 결정적
+        {
+            if (m.MeshType != 0 || m.ShaderMatB is not { } matB) continue;   // 리지드 + 셰이더 등록된 것만
+            foreach (var s in m.Slots)
+                if (!shaders.ContainsKey(s.MaterialIndex)) shaders[s.MaterialIndex] = matB;  // 첫 메시 우선
+        }
+        return shaders;
+    }
+
     public static Result Expand(IReadOnlyList<CostumeMeshModel.Mesh> meshes,
                                 IReadOnlyDictionary<int, uint> materialShaders)
     {

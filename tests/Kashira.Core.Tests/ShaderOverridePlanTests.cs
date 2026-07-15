@@ -80,6 +80,44 @@ public class ShaderOverridePlanTests
         Assert.NotEqual(c1.RenameMap[0xAAAA0001], c2.RenameMap[0xBBBB0002]);   // 충돌 없음
     }
 
+    // 두 레코드 sid: [mesh, mA, meshMatB, 0, donor, dA, donorMatB, 0].
+    private static CharacterSid SidTwo(uint mesh, uint meshMatB, uint donor, uint donorMatB)
+    {
+        var buf = new byte[0x40 + 32];
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x08), 2);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x40), mesh);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x44), 0x111);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x48), meshMatB);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x50), donor);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x54), 0x222);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x58), donorMatB);
+        return CharacterSid.Parse(buf);
+    }
+
+    [Fact]
+    public void Build_MeshAlreadyHasShader_SkipsNoRename()
+    {
+        // ★번들 import 회귀 수정: 메시가 이미 이 셰이더(네이티브)를 가지면 오버라이드 no-op → 불필요 rename 방지.
+        var sid = SidWithDonor(0x2d23bc66, 0x3db5c705, 0x4bf9b7f1);
+        var overrides = new Dictionary<uint, uint> { [0x2d23bc66] = 0x4bf9b7f1 };   // 도너 자신 = 이미 matB
+
+        var plan = ShaderOverridePlan.Build(overrides, ShaderCatalog.Empty, sid);
+        Assert.Empty(plan.RenameMap);                                  // 이미 일치 → skip
+        Assert.Empty(plan.SidRegs);
+    }
+
+    [Fact]
+    public void Build_MeshHasDifferentShader_Renames()
+    {
+        // 메시가 다른 셰이더(0x1111)를 가짐 → 실제 편집(0x4bf9b7f1 로 변경) → rename 진행.
+        var sid = SidTwo(mesh: 0xAAAA0001, meshMatB: 0x1111, donor: 0x2d23bc66, donorMatB: 0x4bf9b7f1);
+        var overrides = new Dictionary<uint, uint> { [0xAAAA0001] = 0x4bf9b7f1 };
+
+        var plan = ShaderOverridePlan.Build(overrides, ShaderCatalog.Empty, sid);
+        Assert.Single(plan.RenameMap);                                 // 셰이더 변경 → rename
+        Assert.Equal(0x2d23bc66u, plan.SidRegs[0].DonorMeshHash);
+    }
+
     [Fact]
     public void Build_DeterministicAllocation_Sorted()
     {
