@@ -22,5 +22,6 @@ __pycache__/
 /_docs
 /scripts
 /tools
+/tests
 CLAUDE.md
 README_kr.md

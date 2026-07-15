@@ -83,7 +83,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _hasMeshList;
     private CharacterSid? _sidCache; private bool _sidTried;
     private ShaderCatalog? _catalogCache;
-    private ShaderOverrideSidecar? _meshSidecar; private string? _meshG1mPath;
+    private string? _meshG1mPath;
 
     // 변형 추가/삭제
     [ObservableProperty] private string _variationInfo = "";
@@ -300,8 +300,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
 
         _currentManifestPath = path;
         _gridMaterials.Clear();
-        if (model.BaseForm is not null) _gridMaterials.Add(new GridMaterialVM(model.BaseForm));
-        foreach (var m in model.Materials) _gridMaterials.Add(new GridMaterialVM(m));
+        var catalog = LoadShaderCatalog();
+        if (model.BaseForm is not null) _gridMaterials.Add(new GridMaterialVM(model.BaseForm, catalog, OnMaterialShaderChanged));
+        foreach (var m in model.Materials) _gridMaterials.Add(new GridMaterialVM(m, catalog, OnMaterialShaderChanged));
 
         foreach (var gm in _gridMaterials)
             OutlinerSections.Add(new AssetSectionVM(gm.Name, "material", MaterialDetails(gm), gm));
@@ -483,35 +484,94 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         catch { HasSubmeshList = false; }
     }
 
-    /// <summary>g1m 0x10009(MeshGroup) → 메시 계층(메시=셰이더 → 슬롯). sid 연결되면 각 메시 셰이더 표시.</summary>
+    /// <summary>g1m 0x10009(MeshGroup) → 메시 구조 인스펙터(읽기전용). 셰이더는 재질 그리드에서 편집(설계 §8).
+    /// 여기선 원본 sid 셰이더를 참고용으로만 표시. 슬롯 클릭 → 재질 텍스처 그리드로 이동.</summary>
     private void BuildMeshList()
     {
         if (_currentAssetPath is null) return;
         try
         {
-            var c = G1mContainer.Parse(File.ReadAllBytes(_currentAssetPath));
+            var bytes = File.ReadAllBytes(_currentAssetPath);
+            var c = G1mContainer.Parse(bytes);
             var sid = LoadSid();
             var catalog = LoadShaderCatalog();
+            var slotCats = SlotCategories(bytes);                             // 슬롯(재질)별 텍스처 카테고리
             _meshG1mPath = _currentAssetPath;
-            _meshSidecar = ShaderOverrideSidecar.LoadFor(_currentAssetPath);   // 셰이더 지정 사이드카
             foreach (var m in CostumeMeshModel.Build(c, sid))
-                Meshes.Add(new MeshRowVM(m, catalog, _meshSidecar.Get(m.NameHash), OnMeshShaderChanged));
+                Meshes.Add(new MeshRowVM(m, catalog, slotCats, OnMeshSlotClicked));
             HasMeshList = Meshes.Count > 0;
         }
         catch { HasMeshList = false; }
     }
 
-    /// <summary>메시 셰이더 지정 변경 → 사이드카(&lt;g1m&gt;.shaders.json) 저장. matB null = 원본(오버라이드 제거).</summary>
-    private void OnMeshShaderChanged(uint meshHash, uint? matB)
+    /// <summary>재질 셰이더 타입 변경 → 매니페스트 Materials[m].Shader 저장. matB null = 미지정(제거).
+    /// install 시 Manager 가 이 재질을 쓰는 메시그룹으로 팬아웃(설계 §8).</summary>
+    private void OnMaterialShaderChanged(int materialIndex, uint? matB)
     {
-        if (_meshSidecar is null || _meshG1mPath is null) return;
-        if (matB is { } v) _meshSidecar.Set(meshHash, v); else _meshSidecar.Clear(meshHash);
+        if (_currentManifestPath is null) return;
         try
         {
-            _meshSidecar.SaveFor(_meshG1mPath);
-            Status = $"셰이더 지정: @{meshHash:X8} → {(matB is { } m ? $"0x{m:x8}" : "원본")}";
+            CostumeManifestEditor.SetMaterialShader(_currentManifestPath, materialIndex, matB);
+            Status = $"셰이더 지정: Material {materialIndex} → {(matB is { } v ? $"0x{v:x8}" : "미지정")}";
         }
         catch (Exception ex) { Status = $"셰이더 저장 실패: {ex.Message}"; }
+    }
+
+    /// <summary>메시 슬롯(재질 인덱스) 클릭 → 이 g1m 을 참조하는 코스튬 매니페스트의 그 재질 텍스처 그리드로 이동.</summary>
+    private void OnMeshSlotClicked(int materialIndex)
+    {
+        if (_meshG1mPath is null) return;
+        string g1mName = Path.GetFileName(_meshG1mPath);
+        var manifest = FindManifestForG1m(_meshG1mPath);
+        if (manifest is null)
+        {
+            Status = $"@{g1mName} 을(를) 참조하는 코스튬 매니페스트(.json)를 Content/ 에서 찾지 못했습니다.";
+            return;
+        }
+        SetCurrentAsset(manifest);
+        var section = OutlinerSections.FirstOrDefault(s => s.Material?.MaterialIndex == materialIndex);
+        if (section is not null)
+        {
+            SelectedSection = section;
+            Status = $"텍스처 그리드: {Path.GetFileName(manifest)} · Material {materialIndex}";
+        }
+        else
+        {
+            SelectedSection = OutlinerSections.FirstOrDefault(s => s.Material is not null);
+            Status = $"{Path.GetFileName(manifest)} 에 Material {materialIndex} 슬롯이 없습니다(매니페스트 재질 수를 확인하세요).";
+        }
+    }
+
+    /// <summary>Content/ 에서 Mesh.g1m == "@&lt;g1m파일명&gt;" 인 저작 매니페스트를 찾는다(첫 항목).</summary>
+    private string? FindManifestForG1m(string g1mPath)
+    {
+        string g1mRef = "@" + Path.GetFileName(g1mPath);
+        if (!Directory.Exists(_project.ContentDir)) return null;
+        foreach (var json in Directory.EnumerateFiles(_project.ContentDir, "*.json", SearchOption.AllDirectories))
+        {
+            CostumeManifest? cm;
+            try { cm = CostumeManifest.Parse(File.ReadAllText(json)); } catch { continue; }
+            if (cm?.Mesh?.G1m is { } g && string.Equals(g, g1mRef, StringComparison.OrdinalIgnoreCase))
+                return json;
+        }
+        return null;
+    }
+
+    /// <summary>g1m 0x10002 → 재질 인덱스별 텍스처 카테고리 요약("alb·nmh·occ"). 실패 시 빈 맵.</summary>
+    private static IReadOnlyDictionary<int, string> SlotCategories(byte[] g1m)
+    {
+        var map = new Dictionary<int, string>();
+        try
+        {
+            var mats = G1mFile.Materials(g1m);
+            for (int mi = 0; mi < mats.Count; mi++)
+            {
+                var cats = ShaderCategory.Sort(mats[mi].Select(s => s.Primary).Distinct());
+                map[mi] = string.Join("·", cats.Select(ShaderCategory.RoleName));
+            }
+        }
+        catch { /* 무시 — 카테고리 없이 표시 */ }
+        return map;
     }
 
     /// <summary>셰이더 카탈로그(res/&lt;game&gt;/shaders.json) — 1회 캐시. 없으면 빈 카탈로그.</summary>

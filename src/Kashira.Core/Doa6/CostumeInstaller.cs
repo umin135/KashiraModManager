@@ -34,11 +34,13 @@ public static class CostumeInstaller
             AddNew(CostumeOverride.Apply(set, s.TargetCostume, s.SourceCostume));
 
         var sidRegs = new List<SidInstaller.Registration>();
+        uint shaderBase = 0x0FA10000;                     // 코스튬별 구분 범위(충돌 방지, 멱등: 순서 결정적)
         foreach (var a in authored ?? Enumerable.Empty<CostumeAuthorInstaller.AuthoredCostume>())
         {
-            var r = CostumeAuthorInstaller.Apply(set, a);
+            var r = CostumeAuthorInstaller.Apply(set, a, shaderBase);
             AddNew(r.Assets);
             sidRegs.AddRange(r.SidRegs);                 // 셰이더 오버라이드 등록 누적
+            shaderBase += 0x1000;                         // 코스튬당 4096 해시(충분)
         }
 
         // Character.sid 셰이더 등록(오버라이드) = 리다이렉트 (pristine + 전체 등록, 멱등)

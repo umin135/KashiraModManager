@@ -17,4 +17,9 @@
     <ProjectReference Include="..\..\src\Kashira.Core\Kashira.Core.csproj" />
   </ItemGroup>
 
+  <!-- 셰이더 카탈로그 res/ — 통합 테스트가 설치 경로(AppContext.BaseDirectory/res)를 재현. -->
+  <ItemGroup>
+    <None Include="..\..\src\Kashira.Editor\res\**\*" Link="res\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -35,6 +35,17 @@ public static class CostumeManifestEditor
         Save(root, manifestPath);
     }
 
+    /// <summary>재질 m 의 셰이더 타입(sid matB) 설정(또는 제거). null = 제거(g1m/도너 원본 유지).</summary>
+    public static void SetMaterialShader(string manifestPath, int material, uint? matB)
+    {
+        var root = Load(manifestPath);
+        if (root["Materials"] is not JsonArray mats || material < 0 || material >= mats.Count) return;
+        if (mats[material] is not JsonObject mat) return;
+        if (matB is { } v) mat["Shader"] = $"0x{v:x8}";
+        else mat.Remove("Shader");
+        Save(root, manifestPath);
+    }
+
     /// <summary>base 형태(BaseKtid) 카테고리 슬롯 설정(또는 제거).</summary>
     public static void SetBaseSlot(string manifestPath, int category, string? atRef)
     {

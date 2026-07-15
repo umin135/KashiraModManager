@@ -67,6 +67,27 @@ public sealed class CharacterSid
         return list.ToArray();
     }
 
+    /// <summary>
+    /// 주어진 셰이더 matB 를 2번째 자식으로 쓰는 리지드 메시(도너) 하나를 찾는다. 없으면 null.
+    /// 직접 입력한 matB(카탈로그 밖)나 도너 누락 시, 그 셰이더를 복사할 원본 메시를 sid 에서 스캔한다.
+    /// </summary>
+    public uint? FindDonorFor(uint matB)
+    {
+        var span = _data.AsSpan();
+        var pat = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(pat, matB);
+        for (int x = 8; x + 8 <= span.Length; x += 4)
+        {
+            if (!span.Slice(x, 4).SequenceEqual(pat)) continue;                       // d[x] == matB
+            if (BinaryPrimitives.ReadUInt32LittleEndian(span[(x + 4)..]) != 0) continue; // 뒤 0 = 리지드 2자식
+            uint h = BinaryPrimitives.ReadUInt32LittleEndian(span[(x - 8)..]);         // 후보 메시해시
+            if (h == 0) continue;
+            var ch = GetChildren(h);                                                   // 해시 유일 → 첫 출현 = 이 레코드
+            if (ch is { Length: 2 } && ch[1] == matB) return h;
+        }
+        return null;
+    }
+
     /// <summary>기존 메시의 자식(셰이더)을 교체 — **개수 동일**(크기 불변)일 때만. 소프트/리지드 유지.</summary>
     public void SetChildren(uint meshHash, uint[] children)
     {

@@ -215,9 +215,12 @@ public sealed class KtmodPackage
         if (m.Mesh.Mtl!.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
             mtl = Formats.MtlDoc.FromJson(System.Text.Encoding.UTF8.GetString(mtl)).ToBinary();
 
-        // 재질 스펙 → 설치 재질 + 참조된 텍스처 수집
+        // 재질 스펙 → 설치 재질 + 참조된 텍스처 + 재질별 셰이더(재질 인덱스 → matB) 수집
         var texFiles = new Dictionary<string, byte[]>();
         var mats = new List<Doa6.CostumeAuthorInstaller.AuthoredMaterial>();
+        var materialShaders = new Dictionary<int, uint>();
+        for (int mi = 0; mi < m.Materials.Count; mi++)
+            if (m.Materials[mi].Shader is { } sh) materialShaders[mi] = sh;
         foreach (var spec in m.Materials)
         {
             foreach (var perVar in spec.Slots)
@@ -260,7 +263,8 @@ public sealed class KtmodPackage
         return new Doa6.CostumeAuthorInstaller.AuthoredCostume(
             m.TargetCostume, g1m, grp, mtl, m.VariationCount, mats, texFiles,
             RequireAllSlots: false, MaterialTemplateCostume: m.MaterialTemplate, BaseKtid: m.BaseKtid,
-            BaseKts: ResolveKts(m.BaseKts), ShaderOverrides: shaderOverrides);
+            BaseKts: ResolveKts(m.BaseKts), ShaderOverrides: shaderOverrides,
+            MaterialShaders: materialShaders.Count > 0 ? materialShaders : null);
     }
 
     /// <summary>Content/ 아래 모든 비-json 파일을 leaf 파일명 → 엔트리로(@참조 전역 스코프).</summary>

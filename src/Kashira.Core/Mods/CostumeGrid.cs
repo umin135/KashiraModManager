@@ -12,8 +12,8 @@ public static class CostumeGrid
 {
     public sealed record Cell(int Category, string Role, int Column, string? AtRef, string? FileName, string? FullPath, bool Inherited);
     public sealed record Row(int Category, string Role, IReadOnlyList<Cell> Cells);
-    /// <summary>Index: 재질 인덱스(0..). Base form 은 -1(BaseKtid 편집 대상).</summary>
-    public sealed record Material(int Index, string Name, int ColumnCount, IReadOnlyList<string> ColumnHeaders, IReadOnlyList<Row> Rows);
+    /// <summary>Index: 재질 인덱스(0..). Base form 은 -1(BaseKtid 편집 대상). Shader=셰이더 타입(matB, 미지정 null).</summary>
+    public sealed record Material(int Index, string Name, int ColumnCount, IReadOnlyList<string> ColumnHeaders, IReadOnlyList<Row> Rows, uint? Shader = null);
     public sealed record Model(string SetName, int VariationCount, Material? BaseForm, IReadOnlyList<Material> Materials);
 
     /// <summary>매니페스트 파일 경로(Content/&lt;set&gt;.json) → 그리드 모델. 저작 매니페스트가 아니면 null.</summary>
@@ -73,7 +73,7 @@ public static class CostumeGrid
 
             var headers = new List<string>(cols);
             for (int c = 0; c < cols; c++) headers.Add($"var{c}");
-            materials.Add(new Material(m, $"Material {m}", cols, headers, rows));
+            materials.Add(new Material(m, $"Material {m}", cols, headers, rows, spec.Shader));
         }
 
         return new Model(setName, cm.VariationCount, baseForm, materials);

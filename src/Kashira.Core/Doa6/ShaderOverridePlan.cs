@@ -34,13 +34,15 @@ public static class ShaderOverridePlan
         foreach (var mesh in overrides.Keys.OrderBy(h => h))
         {
             uint matB = overrides[mesh];
-            var entry = catalog.Get(matB);
-            if (entry?.DonorMeshHash is not { } donor) continue;   // 카탈로그/도너 없음 → skip
-            if (!sid.IsRegistered(donor)) continue;                // 도너 미등록 → skip(방어)
+
+            // 도너 해석: 카탈로그 우선, 없거나 무효면 sid 에서 그 matB 쓰는 메시 스캔(직접입력 matB 지원).
+            uint? donor = catalog.Get(matB)?.DonorMeshHash;
+            if (donor is not { } d0 || !sid.IsRegistered(d0)) donor = sid.FindDonorFor(matB);
+            if (donor is not { } donorHash || !sid.IsRegistered(donorHash)) continue;   // 도너 못 찾음 → skip
 
             uint fresh = AllocHash(ref next, sid, used);
             rename[mesh] = fresh;
-            regs.Add(new SidInstaller.Registration(fresh, donor));
+            regs.Add(new SidInstaller.Registration(fresh, donorHash));
         }
 
         return new Result(rename, regs);

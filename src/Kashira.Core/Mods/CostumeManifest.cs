@@ -64,6 +64,10 @@ public sealed record CostumeManifest(
         string mode = Str(mat, "Mode") ?? "constant";
         bool variation = mode.Equals("variation", StringComparison.OrdinalIgnoreCase);
 
+        // 셰이더 타입(sid matB) — 재질 단위. 없으면 g1m/도너 원본 유지.
+        uint? shader = null;
+        if (Str(mat, "Shader") is { } sh && TryHex(sh, out var sv)) shader = sv;
+
         // 변형 항목이 null 이면 그 변형은 base 폴백(MI=0, 오버라이드 없음)을 뜻한다.
         var perVar = new List<IReadOnlyDictionary<int, string>?>();
         if (variation)
@@ -77,7 +81,15 @@ public sealed record CostumeManifest(
             perVar.Add(ParseSlots(tx));
         }
         if (perVar.Count == 0) return null;
-        return new MaterialSpec(variation, perVar, Str(mat, "Kts"));
+        return new MaterialSpec(variation, perVar, Str(mat, "Kts"), shader);
+    }
+
+    /// <summary>"0x1abc" / "1ABC" → uint. 실패 시 false.</summary>
+    private static bool TryHex(string s, out uint v)
+    {
+        s = s.Trim();
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s[2..];
+        return uint.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out v);
     }
 
     /// <summary>{ "0": "@a.g1t", "3": "@b.g1t" } → {0:@a.g1t, 3:@b.g1t}.</summary>
@@ -98,5 +110,5 @@ public sealed record CostumeManifest(
 /// <summary>저작 메시 에셋 심볼릭 참조(@파일이름).</summary>
 public sealed record MeshRefs(string? G1m, string? Grp, string? Mtl);
 
-/// <summary>한 재질 = 변형-영향 여부 + 변형별 (카테고리 → @텍스처) + KTS(@슬롯스키마 참조). 변형 항목 null = base 폴백.</summary>
-public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots, string? Kts = null);
+/// <summary>한 재질 = 변형-영향 여부 + 변형별 (카테고리 → @텍스처) + KTS(@슬롯스키마 참조) + 셰이더 타입(matB). 변형 항목 null = base 폴백.</summary>
+public sealed record MaterialSpec(bool VariationAffecting, IReadOnlyList<IReadOnlyDictionary<int, string>?> Slots, string? Kts = null, uint? Shader = null);

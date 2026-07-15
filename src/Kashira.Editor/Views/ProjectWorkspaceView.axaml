@@ -75,6 +75,24 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 셰이더 타입(재질 단위) — install 시 이 재질을 쓰는 메시그룹으로 팬아웃 -->
+                        <Border DockPanel.Dock="Top" Background="{StaticResource KashiraPanel}" CornerRadius="4" Padding="10,6" Margin="0,0,0,8"
+                                IsVisible="{Binding SelectedGridMaterial.CanEditShader}">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <TextBlock Grid.Column="0" Text="Shader" VerticalAlignment="Center" Foreground="{StaticResource KashiraTextDim}"
+                                           ToolTip.Tip="이 재질의 셰이더 타입. 같은 재질을 공유하는 모든 메시에 install 시 적용됩니다."/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding SelectedGridMaterial.ShaderOptions}"
+                                          SelectedItem="{Binding SelectedGridMaterial.SelectedShader}"
+                                          HorizontalAlignment="Stretch" Padding="6,2" MinHeight="26">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ShaderChoiceVM">
+                                            <TextBlock Text="{Binding Display}" Foreground="#d8b26a"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
                         <Border DockPanel.Dock="Top" Background="{StaticResource KashiraPanel}" CornerRadius="4" Padding="10,7" Margin="0,0,0,10">
                             <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
@@ -208,9 +226,11 @@
                             </ScrollViewer>
                         </DockPanel>
 
-                        <!-- 0x10009: 메시 계층(결정 B) — 메시(=셰이더) → 슬롯(=텍스처). 읽기 전용(현재). -->
+                        <!-- 0x10009: 메시 구조 인스펙터(읽기전용). 셰이더 편집은 재질 그리드에서. 슬롯 클릭 → 텍스처 그리드. -->
                         <DockPanel IsVisible="{Binding HasMeshList}">
-                            <Grid DockPanel.Dock="Top" ColumnDefinitions="100,56,150,*" Margin="4,0,4,4">
+                            <TextBlock DockPanel.Dock="Bottom" Margin="4,6,4,0" FontSize="11" Foreground="{StaticResource KashiraTextDim}"
+                                       Text="읽기전용 구조 뷰. 슬롯(mat N)을 클릭하면 해당 재질의 텍스처 그리드로 이동합니다. 셰이더는 재질 그리드에서 편집."/>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="100,56,180,*" Margin="4,0,4,4">
                                 <TextBlock Grid.Column="0" Text="Mesh" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
                                 <TextBlock Grid.Column="1" Text="Type" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
                                 <TextBlock Grid.Column="2" Text="Slots" FontWeight="SemiBold" Foreground="{StaticResource KashiraTextDim}"/>
@@ -220,19 +240,26 @@
                                 <ItemsControl ItemsSource="{Binding Meshes}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:MeshRowVM">
-                                            <Grid ColumnDefinitions="100,56,150,*" Margin="0,0,0,3">
+                                            <Grid ColumnDefinitions="100,56,180,*" Margin="0,0,0,3">
                                                 <TextBlock Grid.Column="0" Text="{Binding Hash}" Foreground="{StaticResource KashiraText}" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="{StaticResource KashiraTextDim}" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding Slots}" Foreground="{StaticResource KashiraTextDim}" VerticalAlignment="Center"/>
-                                                <ComboBox Grid.Column="3" ItemsSource="{Binding ShaderOptions}"
-                                                          SelectedItem="{Binding SelectedShader}" IsEnabled="{Binding CanEditShader}"
-                                                          HorizontalAlignment="Stretch" Padding="6,2" MinHeight="24" FontSize="12">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:ShaderChoiceVM">
-                                                            <TextBlock Text="{Binding Display}" Foreground="#d8b26a"/>
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
+                                                <Grid Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="-" Foreground="{StaticResource KashiraTextDim}" IsVisible="{Binding !HasSlots}"/>
+                                                    <ItemsControl ItemsSource="{Binding SlotChips}" IsVisible="{Binding HasSlots}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SlotChipVM">
+                                                                <Button Command="{Binding OpenCommand}" Content="{Binding Label}"
+                                                                        Padding="6,2" Margin="0,0,4,4" FontSize="11"
+                                                                        ToolTip.Tip="클릭 → 이 재질의 텍스처 그리드로 이동"/>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Grid>
+                                                <TextBlock Grid.Column="3" Text="{Binding ShaderDisplay}" Foreground="#9a8f7a"
+                                                           VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -379,8 +406,16 @@
                                     <Grid>
                                         <Image Source="{Binding Thumb}" IsVisible="{Binding HasThumb}" Stretch="Uniform" Margin="4"
                                                RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                                        <!-- 폴더: 아이콘 -->
                                         <PathIcon Data="{Binding Icon, Converter={StaticResource IconKind}}" Width="38" Height="38"
-                                                  IsVisible="{Binding !HasThumb}" Foreground="{StaticResource KashiraTextDim}"/>
+                                                  IsVisible="{Binding IsDirectory}" Foreground="#d8b26a"/>
+                                        <!-- 파일(썸네일 없음): 3글자 대문자 타입 배지 -->
+                                        <Border IsVisible="{Binding ShowBadge}" CornerRadius="4"
+                                                Background="{StaticResource KashiraBg}" BorderBrush="#4a4034" BorderThickness="1"
+                                                Padding="10,5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Badge}" FontSize="22" FontWeight="Bold"
+                                                       FontFamily="Consolas, monospace" Foreground="#d8b26a"/>
+                                        </Border>
                                     </Grid>
                                 </Border>
                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" TextAlignment="Center"

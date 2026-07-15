@@ -103,6 +103,18 @@ public class CharacterSidTests
     }
 
     [Fact]
+    public void FindDonorFor_FindsRigidMeshUsingMatB()
+    {
+        var sid = CharacterSid.Parse(BuildSid(2,
+            Rec(0x2D23BC66, 0x3DB5C705, 0x4BF9B7F1),   // 리지드 [mesh, matA, matB]
+            Rec(0xF3040298, 0x45E869B7)));             // 소프트 1자식
+        Assert.Equal(0x2D23BC66u, sid.FindDonorFor(0x4BF9B7F1));   // matB(2번째) 쓰는 메시
+        Assert.Null(sid.FindDonorFor(0x3DB5C705));                 // matA(1번째)는 셰이더 아님
+        Assert.Null(sid.FindDonorFor(0xDEADBEEF));                 // 없음
+        Assert.Null(sid.FindDonorFor(0x45E869B7));                 // 소프트 1자식 = 리지드 도너 아님
+    }
+
+    [Fact]
     public void Register_AlreadyRegistered_Throws()
     {
         var sid = CharacterSid.Parse(BuildSid(1, Rec(0xAAAA0001, 0x11110001)));

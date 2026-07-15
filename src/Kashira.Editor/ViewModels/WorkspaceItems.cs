@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Kashira.Core.Doa6;
 using Kashira.Core.Formats;
 using Kashira.Core.Mods;
@@ -16,10 +17,13 @@ public sealed class BrowserItemVM
     public string Name { get; }
     public string FullPath { get; }
     public bool IsDirectory { get; }
-    public string Icon { get; }        // Material Design Icon 이름(mdi-*)
-    public string Kind { get; }        // 표시용 타입명
+    public string Icon { get; }        // Material Design Icon 이름(mdi-*) — 폴더용
+    public string Kind { get; }        // 표시용 타입명(툴팁)
+    public string Badge { get; } = ""; // 그리드 표시용 3글자 대문자 타입(G1M/MTL/KTS…). kts/grp/mtl json 사이드카는 본래 용도로.
     public Bitmap? Thumb { get; }
     public bool HasThumb => Thumb is not null;
+    /// <summary>썸네일도 폴더도 아니면 타입 배지 표시.</summary>
+    public bool ShowBadge => !IsDirectory && !HasThumb;
 
     public BrowserItemVM(ProjectContent.ContentNode node)
     {
@@ -30,19 +34,21 @@ public sealed class BrowserItemVM
 
         var ext = Path.GetExtension(node.FullPath).TrimStart('.').ToLowerInvariant();
         var name = node.Name.ToLowerInvariant();
-        (Icon, Kind) = ext switch
+        (Icon, Kind, Badge) = ext switch
         {
-            "g1t" => ("texture", "Texture (g1t)"),
-            "dds" or "tga" => ("texture", "Image"),
-            "g1m" => ("mesh", "Mesh (g1m)"),
-            "json" when name.EndsWith(".kts.json") => ("file", "KTS"),
-            "json" when name.EndsWith(".mtl.json") => ("file", "Material list"),
-            "json" when name.EndsWith(".grp.json") => ("file", "Group"),
-            "json" => ("material", "Costume manifest"),
-            "mtl" => ("file", "Material (mtl)"),
-            "grp" => ("file", "Group (grp)"),
-            "kts" => ("file", "KTS"),
-            _ => ("file", ext.Length == 0 ? "File" : ext),
+            "g1t" => ("texture", "Texture (g1t)", "G1T"),
+            "dds" => ("texture", "Image (dds)", "DDS"),
+            "tga" => ("texture", "Image (tga)", "TGA"),
+            "g1m" => ("mesh", "Mesh (g1m)", "G1M"),
+            "json" when name.EndsWith(".kts.json") => ("file", "KTS (슬롯 스키마)", "KTS"),
+            "json" when name.EndsWith(".mtl.json") => ("file", "Material list (mtl)", "MTL"),
+            "json" when name.EndsWith(".grp.json") => ("file", "Group (grp)", "GRP"),
+            "json" => ("material", "Costume manifest", "COS"),
+            "mtl" => ("file", "Material (mtl)", "MTL"),
+            "grp" => ("file", "Group (grp)", "GRP"),
+            "kts" => ("file", "KTS (슬롯 스키마)", "KTS"),
+            _ => ("file", ext.Length == 0 ? "File" : ext,
+                  ext.Length == 0 ? "FILE" : (ext.Length >= 3 ? ext[..3] : ext).ToUpperInvariant()),
         };
         if (ext == "g1t") Thumb = TexturePreview.ThumbnailFromG1t(node.FullPath, 128);
     }
@@ -104,49 +110,47 @@ public sealed class SubmeshRowVM
 /// <summary>셰이더 드롭다운 항목(= 카탈로그 엔트리 또는 "원본"). MatB=null → 원본 유지(오버라이드 없음).</summary>
 public sealed record ShaderChoiceVM(uint? MatB, string Display);
 
-/// <summary>메시 계층(결정 B) 한 행 — 메시(=셰이더) → 슬롯(=텍스처). 리지드는 셰이더 편집 가능.</summary>
-public sealed partial class MeshRowVM : ObservableObject
+/// <summary>메시 행의 슬롯 하나(= g1m 재질 인덱스). 클릭 → 그 재질의 텍스처 그리드(코스튬 매니페스트)로 이동.</summary>
+public sealed partial class SlotChipVM
+{
+    public int MaterialIndex { get; }
+    public string Label { get; }       // "mat0 [alb·nmh]"
+    private readonly System.Action<int>? _onClick;
+
+    public SlotChipVM(int materialIndex, string label, System.Action<int>? onClick)
+    {
+        MaterialIndex = materialIndex;
+        Label = label;
+        _onClick = onClick;
+    }
+
+    [RelayCommand] private void Open() => _onClick?.Invoke(MaterialIndex);
+}
+
+/// <summary>메시 구조 인스펙터 한 행(읽기전용) — 메시그룹 해시 · 물리타입 · 슬롯(클릭→재질그리드) · 원본 셰이더(참고).
+/// 셰이더 편집은 재질 그리드에서(설계 §8). 여기선 g1m/sid 실제 구조만 투명하게 보여준다.</summary>
+public sealed class MeshRowVM
 {
     public string Hash { get; }        // "@1FE387E1" — sid/grp 조인 키
     public string Type { get; }        // rigid/NUNO/NUNV/SOFT
-    public string Slots { get; }       // "mat0, mat1"
-    public bool CanEditShader { get; } // 리지드만 셰이더(matB) 편집
+    public IReadOnlyList<SlotChipVM> SlotChips { get; }   // 클릭 → 텍스처 그리드
+    public bool HasSlots => SlotChips.Count > 0;
+    public string ShaderDisplay { get; }   // 원본 sid 셰이더(읽기전용)
 
-    public IReadOnlyList<ShaderChoiceVM> ShaderOptions { get; }
-    [ObservableProperty] private ShaderChoiceVM _selectedShader;
-
-    private readonly uint _meshHash;
-    private readonly System.Action<uint, uint?>? _onChanged;
-    private bool _suppress;
-
-    public MeshRowVM(CostumeMeshModel.Mesh m, ShaderCatalog? catalog, uint? overrideMatB,
-                     System.Action<uint, uint?>? onShaderChanged)
+    public MeshRowVM(CostumeMeshModel.Mesh m, ShaderCatalog? catalog,
+                     IReadOnlyDictionary<int, string>? slotCategories = null,
+                     System.Action<int>? onSlotClicked = null)
     {
-        _meshHash = m.NameHash;
-        _onChanged = onShaderChanged;
         Hash = $"@{m.NameHash:X8}";
         Type = m.MeshType switch { 0 => "rigid", 1 => "NUNO", 2 => "NUNV", 4 => "SOFT", var t => t.ToString() };
-        Slots = m.Slots.Count == 0 ? "-" : string.Join(", ", m.Slots.Select(s => $"mat{s.MaterialIndex}"));
-        CanEditShader = m.MeshType == 0;
-
-        var opts = new List<ShaderChoiceVM>();
-        string orig = m.ShaderMatB is { } ob ? $"(원본) {catalog?.Display(ob) ?? $"0x{ob:x8}"}" : "(원본)";
-        opts.Add(new ShaderChoiceVM(null, orig));                       // 첫 항목 = 원본(오버라이드 없음)
-        if (CanEditShader && catalog is not null)
-            foreach (var e in catalog.All) opts.Add(new ShaderChoiceVM(e.MatB, e.Display));
-        else if (!CanEditShader)
-            opts[0] = new ShaderChoiceVM(null, "(physics)");
-        ShaderOptions = opts;
-
-        _selectedShader = overrideMatB is { } o
-            ? opts.FirstOrDefault(c => c.MatB == o) ?? opts[0]
-            : opts[0];
-    }
-
-    partial void OnSelectedShaderChanged(ShaderChoiceVM value)
-    {
-        if (_suppress || !CanEditShader) return;
-        _onChanged?.Invoke(_meshHash, value.MatB);                      // null → 오버라이드 제거(원본)
+        SlotChips = m.Slots.Select(s =>
+        {
+            var cat = slotCategories?.GetValueOrDefault(s.MaterialIndex);
+            string label = string.IsNullOrEmpty(cat) ? $"mat{s.MaterialIndex}" : $"mat{s.MaterialIndex} [{cat}]";
+            return new SlotChipVM(s.MaterialIndex, label, onSlotClicked);
+        }).ToList();
+        ShaderDisplay = m.MeshType != 0 ? "(physics)"
+                      : m.ShaderMatB is { } ob ? (catalog?.Display(ob) ?? $"0x{ob:x8}") : "-";
     }
 }
 

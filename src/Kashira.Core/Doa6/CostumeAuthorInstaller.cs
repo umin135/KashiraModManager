@@ -31,7 +31,8 @@ public static class CostumeAuthorInstaller
         string? MaterialTemplateCostume = null,
         IReadOnlyDictionary<int, string>? BaseKtid = null,
         IReadOnlyList<Formats.KtsFile.Slot>? BaseKts = null,
-        IReadOnlyDictionary<uint, uint>? ShaderOverrides = null);   // 메시해시 → 셰이더 matB (사이드카)
+        IReadOnlyDictionary<uint, uint>? ShaderOverrides = null,     // 메시해시 → matB (레거시 사이드카)
+        IReadOnlyDictionary<int, uint>? MaterialShaders = null);     // 재질 인덱스 → matB (매니페스트, 메시그룹으로 팬아웃)
 
     /// <summary>Apply 결과: 신규 에셋 + Character.sid 등록(셰이더 오버라이드).</summary>
     public sealed record ApplyResult(
@@ -39,7 +40,8 @@ public static class CostumeAuthorInstaller
         IReadOnlyList<SidInstaller.Registration> SidRegs);
 
     /// <summary>공유 세트에 저작 코스튬을 적용하고 신규 에셋 + sid 등록을 반환(누적 가능).</summary>
-    public static ApplyResult Apply(Doa6SingletonSet set, AuthoredCostume mod)
+    /// <param name="shaderAllocBase">셰이더 오버라이드 fresh 해시 할당 시작값 — 다중 코스튬 충돌 방지 위해 코스튬별로 구분된 범위를 넘긴다.</param>
+    public static ApplyResult Apply(Doa6SingletonSet set, AuthoredCostume mod, uint shaderAllocBase = 0x0FA10000)
     {
         uint tgt = set.CostumeOid(mod.TargetCostume);
         var tgtMat = set.ResolveMaterial(tgt);
@@ -57,15 +59,22 @@ public static class CostumeAuthorInstaller
 
         var newAssets = new List<CostumeOverride.NewAsset>();
 
-        // 0) 셰이더 오버라이드(사이드카): fresh 해시 할당 → g1m 메시그룹 재작성 + Character.sid 등록(도너 셰이더).
+        // 0) 셰이더 오버라이드: fresh 해시 할당 → g1m 메시그룹 재작성 + Character.sid 등록(도너 셰이더).
         //    텍스처는 유지(메시 g1m 재질 불변), 셰이더만 변경·코스튬별 격리(전역 공유 해시 불변).
+        //    입력 = 재질 셰이더(재질→메시그룹 팬아웃, 주 경로) ∪ 레거시 사이드카(메시해시 직접). 재질 우선.
         var sidRegs = new List<SidInstaller.Registration>();
         var g1mBytes = mod.G1m;
-        if (mod.ShaderOverrides is { Count: > 0 } shaderOv
-            && set.Extractor.Extract(CharacterSid.FileKtid) is { } sidBytes)
+        var meshOv = new Dictionary<uint, uint>();
+        if (mod.ShaderOverrides is { } legacy) foreach (var kv in legacy) meshOv[kv.Key] = kv.Value;
+        if (mod.MaterialShaders is { Count: > 0 } matShaders)
+        {
+            var meshes = CostumeMeshModel.Build(G1mContainer.Parse(g1mBytes)); // sid 불요(재질/메시타입=g1m)
+            foreach (var kv in MaterialShaderFanout.Expand(meshes, matShaders).MeshShaders) meshOv[kv.Key] = kv.Value;
+        }
+        if (meshOv.Count > 0 && set.Extractor.Extract(CharacterSid.FileKtid) is { } sidBytes)
         {
             var catalog = ShaderCatalog.LoadFile(Path.Combine(AppContext.BaseDirectory, "res", "doa6lr", "shaders.json"));
-            var plan = ShaderOverridePlan.Build(shaderOv, catalog, CharacterSid.Parse(sidBytes));
+            var plan = ShaderOverridePlan.Build(meshOv, catalog, CharacterSid.Parse(sidBytes), shaderAllocBase);
             if (plan.RenameMap.Count > 0)
             {
                 var gc = G1mContainer.Parse(g1mBytes);

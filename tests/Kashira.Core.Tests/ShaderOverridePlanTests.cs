@@ -45,15 +45,39 @@ public class ShaderOverridePlanTests
     }
 
     [Fact]
-    public void Build_UnknownShader_Skipped()
+    public void Build_UnknownShader_FindsDonorViaSidScan()
     {
+        // 카탈로그 없어도, sid 에 그 matB 쓰는 메시가 있으면 도너로 찾음(직접입력 matB 지원).
         var sid = SidWithDonor(0x2d23bc66, 0x3db5c705, 0x4bf9b7f1);
-        var cat = ShaderCatalog.Empty;                    // 카탈로그 없음
         var overrides = new Dictionary<uint, uint> { [0x1FE387E1] = 0x4bf9b7f1 };
 
-        var plan = ShaderOverridePlan.Build(overrides, cat, sid);
-        Assert.Empty(plan.RenameMap);
+        var plan = ShaderOverridePlan.Build(overrides, ShaderCatalog.Empty, sid);
+        Assert.Single(plan.SidRegs);
+        Assert.Equal(0x2d23bc66u, plan.SidRegs[0].DonorMeshHash);   // sid 스캔으로 도너
+    }
+
+    [Fact]
+    public void Build_ShaderNotInSid_Skipped()
+    {
+        var sid = SidWithDonor(0x2d23bc66, 0x3db5c705, 0x4bf9b7f1);
+        var overrides = new Dictionary<uint, uint> { [0x1FE387E1] = 0xDEADBEEF };   // sid 에 없는 matB
+
+        var plan = ShaderOverridePlan.Build(overrides, ShaderCatalog.Empty, sid);
+        Assert.Empty(plan.RenameMap);                                  // 도너 못 찾음 → skip
         Assert.Empty(plan.SidRegs);
+    }
+
+    [Fact]
+    public void Build_AllocBase_MultiCostumeNoOverlap()
+    {
+        var sid = SidWithDonor(0x2d23bc66, 0x3db5c705, 0x4bf9b7f1);
+        var cat = Catalog(0x4bf9b7f1, 0x2d23bc66);
+        // 코스튬1 base 0x0FA10000, 코스튬2 base 0x0FA11000 → 서로 다른 범위
+        var c1 = ShaderOverridePlan.Build(new Dictionary<uint, uint> { [0xAAAA0001] = 0x4bf9b7f1 }, cat, sid, 0x0FA10000);
+        var c2 = ShaderOverridePlan.Build(new Dictionary<uint, uint> { [0xBBBB0002] = 0x4bf9b7f1 }, cat, sid, 0x0FA11000);
+        Assert.Equal(0x0FA10000u, c1.RenameMap[0xAAAA0001]);
+        Assert.Equal(0x0FA11000u, c2.RenameMap[0xBBBB0002]);
+        Assert.NotEqual(c1.RenameMap[0xAAAA0001], c2.RenameMap[0xBBBB0002]);   // 충돌 없음
     }
 
     [Fact]
