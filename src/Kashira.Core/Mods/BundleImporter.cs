@@ -89,10 +89,20 @@ public static class BundleImporter
             if (File.Exists(src)) File.Copy(src, Path.Combine(setDir, name), true);
         }
 
-        // 4b) KTS(슬롯 스키마)를 g1m 에서 생성해 프로젝트에 저장(편집 가능 에셋). 재질 m ↔ g1m 재질 m.
+        // 4b) KTS(슬롯 스키마) = **소스 코스튬의 네이티브 KTS**(게임 원본, 슬롯 순서·카테고리 정확)로 저장.
+        //     ★g1m 0x10002 유도는 슬롯 누락/순서 상이(실측 RYU mat1 body: occlusion p5·occ2 p55·s4m p62 누락)
+        //       → 그 카테고리 텍스처가 MPR 에 미배치 → 스킨 오라우팅("피부인데 미묘히 이상"). 네이티브 우선, 없으면 g1m 폴백.
         for (int m = 0; m < g1mMats.Count; m++)
-            File.WriteAllText(Path.Combine(setDir, $"{baseName}.mat{m}.kts.json"),
-                KtsFile.ToJson(KtsFile.SlotsFromG1mMaterial(g1mMats[m])));
+        {
+            IReadOnlyList<KtsFile.Slot> slots;
+            uint srcMbe = m < sc && mm.Mi.Length > m ? mm.Mi[m] : 0;   // 소스 var0 재질 m 의 MBE
+            if (srcMbe != 0 && me.Find(srcMbe) is { } mbeR
+                && ex.Extract(mbeR.ReadU32(Doa6SingletonSet.P_Mbe_Kts)) is { } ktsBytes)
+                slots = KtsFile.Parse(ktsBytes);                       // 네이티브 KTS
+            else
+                slots = KtsFile.SlotsFromG1mMaterial(g1mMats[m]);      // 폴백(소스 MBE 없는 재질=g1m 유도)
+            File.WriteAllText(Path.Combine(setDir, $"{baseName}.mat{m}.kts.json"), KtsFile.ToJson(slots));
+        }
 
         // 4c) 셰이더 타입(sid matB): 소스 코스튬의 재질별 셰이더를 전역 sid 에서 캡처(재질 인스턴스 완결).
         var matShaders = ResolveMaterialShaders(g1m, ex);

@@ -185,6 +185,19 @@ public static class CostumeAuthorInstaller
         set.CharSetting(tgt).SetU32Array(Doa6SingletonSet.P_Cs_Mi, mi);
         set.MarkDirty(Doa6SingletonSet.Ce1CommonFk);
 
+        // 5) base form(DM.TBC.ktid): 소스 코스튬의 base 스킨으로 repoint(canonical 참조 = 온라인 안전, 스왑 경로 동종).
+        //    미처리 시 base form 이 타겟의 base 스킨으로 남아, 재로드/base-form 해석 경로에서 스킨 드리프트
+        //    (소스↔타겟이 같은 캐릭터면 "스킨인데 미묘하게 다름"으로 나타남). MPR 체인(주 렌더)은 위에서 배선됨.
+        if (mod.MaterialTemplateCostume is { } srcCostume)
+        {
+            uint srcBaseKtid = set.ResolveAssets(set.CostumeOid(srcCostume)).BaseKtid;
+            if (srcBaseKtid != 0 && set.Ce.Find(tgtAssets.TbcObj) is { } tbcRec)
+            {
+                tbcRec.SetU32(Doa6SingletonSet.P_Tbc_Ktid, srcBaseKtid);
+                set.MarkDirty(Doa6SingletonSet.CeFk);
+            }
+        }
+
         return new ApplyResult(newAssets, sidRegs);
     }
 
