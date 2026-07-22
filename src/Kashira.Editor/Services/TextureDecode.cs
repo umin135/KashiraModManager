@@ -72,7 +72,7 @@ public static class TextureDecode
     private static byte[] DecodeBc6HReinhard(byte[] blockData, int w, int h)
     {
         var hdr = Decoder.DecodeRawHdr(blockData, w, h, CompressionFormat.Bc6U);
-        if (hdr.Length < w * h) throw new InvalidOperationException("bc6h 디코드 크기 부족");
+        if (hdr.Length < w * h) throw new InvalidOperationException("bc6h decode size insufficient");
         var rgba = new byte[w * h * 4];
         for (int i = 0; i < w * h; i++)
         {

@@ -37,7 +37,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock Text="설치된 게임이 없습니다. Manager 에서 게임을 추가/감지하면 여기에 표시됩니다."
+                <TextBlock Text="No games installed. Add or detect games in the Manager and they will appear here."
                            FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource KashiraTextDim}"
                            IsVisible="{Binding !HasInstalledGames}"/>
                 <Button Content="Create Project" Classes="accent" HorizontalAlignment="Stretch"

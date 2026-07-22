@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Kashira.Core.Games;
 using Kashira.Core.Mods;
 using Kashira.Core.Patching;
@@ -51,8 +52,20 @@ sealed class Program
         var cmd = args[(sep + 1)..];
         var gameExe = cmd[0];
 
-        ApplyForGame(gameExe); // best-effort — 실패해도 게임 실행은 막지 않음
+        // ★실행옵션 자동패치는 시간이 걸릴 수 있으므로, 이 모드 전용 스플래시 로딩바로 진행률을 보여준다.
+        //   App 이 RunTask 를 감지하면 일반 UI 대신 스플래시만 띄우고, 패치가 끝나면 창을 닫고 종료 →
+        //   여기로 복귀해 진짜 게임을 실행한다. (패치 실패해도 게임 실행은 막지 않음.)
+        App.RunTask = async progress => await Task.Run(() => ApplyForGame(gameExe, progress));
+        try { BuildAvaloniaApp().StartWithClassicDesktopLifetime(Array.Empty<string>()); }
+        catch { /* never block launch */ }
 
+        return LaunchGame(cmd);
+    }
+
+    /// <summary>패치 완료 후 진짜 게임을 자식 프로세스로 실행하고 종료 대기.</summary>
+    private static int LaunchGame(string[] cmd)
+    {
+        var gameExe = cmd[0];
         try
         {
             var psi = new ProcessStartInfo(gameExe)
@@ -69,21 +82,27 @@ sealed class Program
         catch { return 1; }
     }
 
-    /// <summary>게임 exe 경로로 등록된 게임을 찾아 DebugMods 를 Apply. 실패는 조용히 무시.</summary>
-    private static void ApplyForGame(string gameExe)
+    /// <summary>게임 exe 경로로 등록된 게임을 찾아 DebugMods 를 Apply. 실패는 조용히 무시. 진행률 보고(선택).</summary>
+    private static void ApplyForGame(string gameExe, IProgress<PatchProgress>? progress = null)
     {
         try
         {
+            progress?.Report(new PatchProgress(0, 0, "Locating game…"));
             var game = GameLibrary.Load().FirstOrDefault(g =>
                 !string.IsNullOrEmpty(g.InstallPath) &&
                 gameExe.StartsWith(g.InstallPath, StringComparison.OrdinalIgnoreCase));
             if (game is null) return;
 
             var ws = new GameWorkspace(game);
+            progress?.Report(new PatchProgress(0, 0, "Loading mods…"));
             var gather = ModApplier.Gather(ws, game); // DebugMods + 호환 .ktmod
-            if (gather.Replacements.Count == 0) return;
 
-            PatchEngine.Apply(ws, gather.Replacements);
+            // 켤 모드가 없고 이미 순정이면 할 일 없음. 그러나 순정이 아니면(이전 패치 잔존) Apply(빈 목록)로
+            // 현재 원본으로 복구해야 한다 — 프로필에서 전부 비활성화한 채 실행하는 경우.
+            if (gather.Replacements.Count == 0 && PatchEngine.GetStatus(ws) == PatchStatus.NotPatched)
+                return;
+
+            PatchEngine.Apply(ws, gather.Replacements, progress);
         }
         catch { /* never block launch */ }
     }

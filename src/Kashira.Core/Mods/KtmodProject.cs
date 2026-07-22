@@ -5,7 +5,8 @@ namespace Kashira.Core.Mods;
 
 /// <summary>
 /// Editor 의 .ktmod 저작 프로젝트(= 디스크 폴더 하나). 폴더를 직접 편집하고 Build 로 .ktmod(zip)를 낸다.
-/// 폴더 구조: project.ktproj(에디터 메타, .ktmod엔 미포함) + Content/ + Content_Legacy/ + preview/ + thumb.png.
+/// 폴더 구조: project.ktproj(에디터 메타, .ktmod엔 미포함) + Content_Legacy/ + preview/ + thumb.png.
+/// (Content/ 저작 파이프라인은 현재 무기한 보류 — 생성/번들 안 함.)
 /// Build 시 메타데이터에서 mod.ini 를 생성한다(KtmodPackage 가 되읽음).
 /// </summary>
 public sealed class KtmodProject
@@ -37,7 +38,7 @@ public sealed class KtmodProject
             throw new IOException($"폴더가 이미 존재하고 비어있지 않음: {dir}");
 
         Directory.CreateDirectory(dir);
-        Directory.CreateDirectory(Path.Combine(dir, "Content"));
+        // Content/ (저작 파이프라인)은 현재 무기한 보류 — 생성하지 않는다(연구문서 결정). Content_Legacy 전용.
         Directory.CreateDirectory(Path.Combine(dir, "Content_Legacy"));
         Directory.CreateDirectory(Path.Combine(dir, "preview"));
 
@@ -96,7 +97,7 @@ public sealed class KtmodProject
 
     /// <summary>
     /// 프로젝트 폴더 → .ktmod(zip). mod.ini 를 메타데이터로 생성해 포함하고,
-    /// Content/ · Content_Legacy/ · preview/ · thumb.png 를 담는다(project.ktproj 는 제외).
+    /// Content_Legacy/ · preview/ · thumb.png 를 담는다(Content/ 보류·project.ktproj 는 제외).
     /// </summary>
     public void Build(string outputKtmodPath)
     {
@@ -113,7 +114,8 @@ public sealed class KtmodProject
             if (!string.IsNullOrWhiteSpace(Description)) w.Write($"Description = {Description}\n");
         }
 
-        foreach (var sub in new[] { "Content", "Content_Legacy", "preview" })
+        // Content/ 는 보류 상태라 번들에 포함하지 않는다(존재해도 무시). Content_Legacy + preview 만.
+        foreach (var sub in new[] { "Content_Legacy", "preview" })
             AddDir(zip, Path.Combine(ProjectDir, sub), sub);
         string thumb = Path.Combine(ProjectDir, "thumb.png");
         if (File.Exists(thumb)) zip.CreateEntryFromFile(thumb, "thumb.png");

@@ -21,9 +21,9 @@ public static class TextureIo
     {
         var r = G1tFile.Parse(File.ReadAllBytes(g1tPath));
         var t = r.Textures[0];
-        if (t.ArraySize > 1) throw new NotSupportedException("배열 텍스처는 DDS 내보내기 미지원");
+        if (t.ArraySize > 1) throw new NotSupportedException("Array textures are not supported for DDS export");
         int dxgi = G1tToDxgi(t.Format);
-        if (dxgi == 0) throw new NotSupportedException($"미지원 포맷 {G1tFile.FormatName(t.Format)}");
+        if (dxgi == 0) throw new NotSupportedException($"Unsupported format {G1tFile.FormatName(t.Format)}");
         string outPath = Path.ChangeExtension(g1tPath, ".dds");
         File.WriteAllBytes(outPath, DdsFile.Build(new DdsFile.Image(dxgi, t.Width, t.Height, t.Mips, t.Data)));
         return outPath;
@@ -45,14 +45,14 @@ public static class TextureIo
     {
         var orig = File.ReadAllBytes(g1tPath);
         var t0 = G1tFile.Parse(orig).Textures[0];
-        if (t0.ArraySize > 1) throw new NotSupportedException("배열 텍스처는 교체 미지원");
+        if (t0.ArraySize > 1) throw new NotSupportedException("Array textures are not supported for replacement");
         string ext = Path.GetExtension(imagePath).TrimStart('.').ToLowerInvariant();
 
         byte[] result = ext switch
         {
             "dds" => ReplaceFromDds(orig, File.ReadAllBytes(imagePath)),
             "tga" => ReplaceFromTga(orig, t0.Format, imagePath),
-            _ => throw new NotSupportedException($"미지원 형식: .{ext} (dds/tga 만)"),
+            _ => throw new NotSupportedException($"Unsupported format: .{ext} (dds/tga only)"),
         };
         File.WriteAllBytes(g1tPath, result);
     }
@@ -61,7 +61,7 @@ public static class TextureIo
     {
         var dds = DdsFile.Parse(ddsBytes);
         byte fmt = DxgiToG1t(dds.DxgiFormat);
-        if (fmt == 0) throw new NotSupportedException($"미지원 DXGI 포맷 {dds.DxgiFormat}");
+        if (fmt == 0) throw new NotSupportedException($"Unsupported DXGI format {dds.DxgiFormat}");
         return G1tFile.ReplaceTexture0(orig, fmt, dds.Width, dds.Height, dds.MipCount, 0, dds.Data);
     }
 
@@ -69,7 +69,7 @@ public static class TextureIo
     {
         var (w, h, rgba) = ReadTga(File.ReadAllBytes(tgaPath));
         var comp = G1tToCompression(targetFmt)
-                   ?? throw new NotSupportedException($"인코딩 미지원 포맷 {G1tFile.FormatName(targetFmt)}");
+                   ?? throw new NotSupportedException($"Unsupported encoding format {G1tFile.FormatName(targetFmt)}");
 
         var enc = new BcEncoder { OutputOptions = { Format = comp, GenerateMipMaps = true, Quality = CompressionQuality.Balanced } };
         var colors = ToColors(rgba);
@@ -95,7 +95,7 @@ public static class TextureIo
         Array.Copy(t.Data, input, size);
         // 후처리 디코드(BC4 그레이·BC5 노말Z·BC6H Reinhard) — TexturePreview 와 동일 경로.
         var rgba = TextureDecode.Decode(input, t.Width, t.Height, t.Format, TextureDecode.SwizzleType(t))
-                   ?? throw new NotSupportedException($"디코드 미지원 포맷 {G1tFile.FormatName(t.Format)}");
+                   ?? throw new NotSupportedException($"Unsupported decode format {G1tFile.FormatName(t.Format)}");
         return (t.Width, t.Height, rgba);
     }
 
@@ -132,7 +132,7 @@ public static class TextureIo
 
     private static (int w, int h, byte[] rgba) ReadTga(byte[] buf)
     {
-        if (buf.Length < 18) throw new InvalidDataException("tga: 헤더 부족");
+        if (buf.Length < 18) throw new InvalidDataException("tga: header too short");
         int idLen = buf[0];
         int imageType = buf[2];
         int w = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(0x0C));
@@ -140,8 +140,8 @@ public static class TextureIo
         int bpp = buf[0x10];
         int desc = buf[0x11];
         bool topOrigin = (desc & 0x20) != 0;
-        if (imageType != 2 && imageType != 10) throw new NotSupportedException($"tga: 미지원 타입 {imageType}(비압축/ RLE 트루컬러만)");
-        if (bpp != 32 && bpp != 24) throw new NotSupportedException($"tga: 미지원 bpp {bpp}");
+        if (imageType != 2 && imageType != 10) throw new NotSupportedException($"tga: unsupported type {imageType} (uncompressed/RLE true-color only)");
+        if (bpp != 32 && bpp != 24) throw new NotSupportedException($"tga: unsupported bpp {bpp}");
         int bytesPP = bpp / 8;
         int dataOff = 18 + idLen; // 컬러맵 없음 가정
 

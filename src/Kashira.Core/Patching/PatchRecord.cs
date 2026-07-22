@@ -24,6 +24,11 @@ public sealed class DbPatchInfo
     public string RdbHash { get; set; } = "";
     public long RdxSize { get; set; }
     public string RdxHash { get; set; } = "";
+    // Apply 당시 사용한 pristine(백업) rdb/rdx 의 지문 — 백업 무결성·rebaseline 진단용
+    public long PreRdbSize { get; set; }
+    public string PreRdbHash { get; set; } = "";
+    public long PreRdxSize { get; set; }
+    public string PreRdxHash { get; set; } = "";
 }
 
 /// <summary>_Kashira/rdbpatch.json — 마지막 Apply 시점 기록.</summary>

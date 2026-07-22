@@ -42,12 +42,21 @@ public static class Updater
                 return null;
 
             var rid = Rid();
+            // 이 실행파일(Manager)의 이름 접두어 — 같은 릴리스에 KashiraEditor 등 다른 exe 가 함께 첨부돼도
+            // "<앱>-" 로 시작하는 asset 만 고른다(예: Kashira-win-x64.exe ✓ / KashiraEditor-win-x64.exe ✗).
+            var appPrefix = (Assembly.GetEntryAssembly()?.GetName().Name ?? "Kashira") + "-";
             JsonElement? pick = null;
+            // 1순위: "<앱>-" 로 시작하고 rid 포함
             foreach (var a in assets.EnumerateArray())
             {
-                var name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                if (name.Contains(rid, StringComparison.OrdinalIgnoreCase)) { pick = a; break; }
+                var name = AssetName(a);
+                if (name.StartsWith(appPrefix, StringComparison.OrdinalIgnoreCase)
+                    && name.Contains(rid, StringComparison.OrdinalIgnoreCase)) { pick = a; break; }
             }
+            // 2순위: rid 포함(구버전 릴리스 호환)
+            if (pick is null)
+                foreach (var a in assets.EnumerateArray())
+                    if (AssetName(a).Contains(rid, StringComparison.OrdinalIgnoreCase)) { pick = a; break; }
             pick ??= assets.EnumerateArray().First();
 
             var asset = pick.Value;
@@ -103,6 +112,9 @@ public static class Updater
         http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return http;
     }
+
+    private static string AssetName(JsonElement a) =>
+        a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
 
     private static Version? ParseVersion(string tag)
     {

@@ -1,0 +1,96 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Kashira.Gui.Views.KtmodDetailWindow"
+        x:CompileBindings="False"
+        Width="760" Height="600" MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource KashiraBg}"
+        Icon="/Assets/kashira.ico"
+        Title="{Binding Name}">
+
+    <DockPanel Margin="18">
+
+        <!-- Header -->
+        <StackPanel DockPanel.Dock="Top" Spacing="3" Margin="0,0,0,12">
+            <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraAccent}"
+                       FontSize="22" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <TextBlock Text="{Binding Author}" Foreground="{StaticResource KashiraTextDim}" FontSize="12"/>
+                <TextBlock Text="{Binding CompatText}" FontSize="12"
+                           Foreground="{StaticResource KashiraAccent}"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Footer -->
+        <Button DockPanel.Dock="Bottom" Content="Close" Classes="accent" HorizontalAlignment="Right"
+                Margin="0,12,0,0" Click="OnCloseClick"/>
+
+        <!-- Body: large image (+ gallery) | metadata -->
+        <Grid ColumnDefinitions="*,16,240">
+
+            <!-- Left: large selected image with a clickable thumbnail strip below -->
+            <DockPanel Grid.Column="0">
+                <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Images}"
+                         SelectedItem="{Binding SelectedImage}" IsVisible="{Binding HasGallery}"
+                         Background="Transparent" Margin="0,10,0,0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6"/></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="96" Height="96" Background="{StaticResource KashiraPanel}"
+                                    CornerRadius="4" ClipToBounds="True">
+                                <Image Source="{Binding}" Stretch="UniformToFill"
+                                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border Background="{StaticResource KashiraPanel}" CornerRadius="6">
+                    <Panel>
+                        <Image Source="{Binding SelectedImage}" Stretch="Uniform" Margin="10"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                               IsVisible="{Binding HasImages}"/>
+                        <TextBlock Text="No preview images" IsVisible="{Binding !HasImages}"
+                                   Foreground="{StaticResource KashiraTextDim}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Panel>
+                </Border>
+            </DockPanel>
+
+            <!-- Right: metadata -->
+            <Border Grid.Column="2" Background="{StaticResource KashiraPanel}" CornerRadius="6" Padding="14">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="DETAILS" Foreground="{StaticResource KashiraTextDim}"
+                               FontSize="11" FontWeight="Bold"/>
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Author" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                        <TextBlock Text="{Binding Author}" Foreground="{StaticResource KashiraText}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Target game" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                        <TextBlock Text="{Binding Target}" Foreground="{StaticResource KashiraText}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Files" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                        <TextBlock Text="{Binding FileCountText}" Foreground="{StaticResource KashiraText}"/>
+                    </StackPanel>
+
+                    <Border Height="1" Background="{StaticResource KashiraPanelHi}"/>
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Description" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                        <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource KashiraText}"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -27,7 +27,7 @@ public static class PatchEngine
 
     private sealed record DbCtx(int Index, string Db, string LiveRdb, string LiveRdx, RdbFile Rdb, RdxFile Rdx);
 
-    public static Report Apply(GameWorkspace ws, IReadOnlyList<Replacement> replacements)
+    public static Report Apply(GameWorkspace ws, IReadOnlyList<Replacement> replacements, IProgress<PatchProgress>? progress = null)
     {
         Directory.CreateDirectory(ws.BackupDir);
         var notes = new List<string>();
@@ -37,6 +37,11 @@ public static class PatchEngine
         foreach (var f in SafeGlob(ws.PackageDir, ModsGlob)) TryDelete(f);
 
         // Phase 1 — pristine rdb/rdx 로드 (rebaseline 포함)
+        // rebaseline 판단은 파일별 지문으로: 현재 라이브가 '지난번 우리가 쓴 패치 출력'과 일치하면
+        // 우리가 만든 것 → 기존 백업이 진짜 원본이므로 보존. 불일치하면 신선/업데이트된 원본 →
+        // 그 파일을 백업으로 다시 잡는다(rebaseline). rdb/rdx 를 독립적으로 판단하므로 게임 업데이트가
+        // 한쪽만 바꿔도(예: rdb 만 v2, rdx 는 우리 패치본 잔존) 올바르게 각자 처리된다.
+        var prevRec = PatchRecord.Load(ws.PatchRecordPath);
         var loaded = new List<DbCtx>();
         int dbIndex = 0;
         foreach (var db in ws.Databases)
@@ -47,19 +52,31 @@ public static class PatchEngine
             string bakRdx = Path.Combine(ws.BackupDir, db + ".rdx");
             if (!File.Exists(liveRdb) || !File.Exists(liveRdx)) { dbIndex++; continue; }
 
-            if (RdxHasModsHash(liveRdx))
+            var di = prevRec?.Databases.FirstOrDefault(d => d.Db.Equals(db, StringComparison.OrdinalIgnoreCase));
+            bool rdbIsOurs, rdxIsOurs;
+            if (di is not null)
             {
-                if (!File.Exists(bakRdb) || !File.Exists(bakRdx))
-                {
-                    notes.Add($"{db}: SKIPPED — live index already patched but no backup exists (restore game files first)");
-                    dbIndex++;
-                    continue;
-                }
+                // 기록의 '패치 출력' 지문과 대조 — 일치해야 우리가 만든 현재 라이브.
+                rdbIsOurs = Matches(liveRdb, di.RdbSize, di.RdbHash);
+                rdxIsOurs = Matches(liveRdx, di.RdxSize, di.RdxHash);
             }
             else
             {
-                File.Copy(liveRdb, bakRdb, overwrite: true); // rebaseline
-                File.Copy(liveRdx, bakRdx, overwrite: true);
+                // 기록 없음 → rdx 의 mods-hash 시그니처로 추정(rdb 는 rdx 판단을 따름).
+                rdxIsOurs = RdxHasModsHash(liveRdx);
+                rdbIsOurs = rdxIsOurs;
+            }
+
+            // 우리 패치가 아닌(=원본) 파일만 백업으로 rebaseline. 우리 패치 파일은 기존 백업(진짜 원본) 보존.
+            if (!rdbIsOurs) File.Copy(liveRdb, bakRdb, overwrite: true);
+            if (!rdxIsOurs) File.Copy(liveRdx, bakRdx, overwrite: true);
+
+            // 우리 패치 파일인데 백업이 없으면 원본 복구 불가 → 건너뜀(사용자에게 원본 복원 안내).
+            if (!File.Exists(bakRdb) || !File.Exists(bakRdx))
+            {
+                notes.Add($"{db}: SKIPPED — live index looks patched but no backup exists (restore game files first)");
+                dbIndex++;
+                continue;
             }
 
             loaded.Add(new DbCtx(dbIndex, db, liveRdb, liveRdx,
@@ -102,7 +119,10 @@ public static class PatchEngine
             work[target.Db].Add((r, true, typeKtid));
         }
 
-        // Phase 3 — DB별 처리
+        // Phase 3 — DB별 처리 (진행률: 배정된 교체 항목 수 기준)
+        int total = work.Values.Sum(v => v.Count);
+        int done = 0;
+        progress?.Report(new PatchProgress(0, total, total > 0 ? "Applying mods…" : "No changes"));
         foreach (var c in loaded)
         {
             var items = work[c.Db];
@@ -145,6 +165,8 @@ public static class PatchEngine
                     redirected++;
                 }
                 matched.Add(r.FileKtid);
+                done++;
+                progress?.Report(new PatchProgress(done, total, $"Patching assets… {done}/{total}"));
             }
 
             // 리다이렉트 완료 후 신규 엔트리를 정렬 위치에 삽입 (재구성)
@@ -155,6 +177,9 @@ public static class PatchEngine
             File.WriteAllBytes(c.LiveRdb, c.Rdb.Data);
             File.WriteAllBytes(c.LiveRdx, rdx2.Data);
 
+            // pristine(백업) 지문 — 백업 파일은 이번 Apply 로 변경되지 않으므로 그대로 읽어 기록.
+            var preRdb = File.ReadAllBytes(Path.Combine(ws.BackupDir, c.Db + ".rdb"));
+            var preRdx = File.ReadAllBytes(Path.Combine(ws.BackupDir, c.Db + ".rdx"));
             record.Databases.Add(new DbPatchInfo
             {
                 Db = c.Db,
@@ -164,6 +189,10 @@ public static class PatchEngine
                 RdbHash = Hash(c.Rdb.Data),
                 RdxSize = rdx2.Data.Length,
                 RdxHash = Hash(rdx2.Data),
+                PreRdbSize = preRdb.Length,
+                PreRdbHash = Hash(preRdb),
+                PreRdxSize = preRdx.Length,
+                PreRdxHash = Hash(preRdx),
             });
             notes.Add($"{c.Db}: {redirected} redirected, {added} added → {modsName} (fdata_id {newId})");
         }
@@ -171,18 +200,30 @@ public static class PatchEngine
         if (record.Databases.Count > 0) record.Save(ws.PatchRecordPath);
         else TryDelete(ws.PatchRecordPath);
 
+        progress?.Report(new PatchProgress(total, total, "Done"));
         var notFound = replacements.Where(r => !matched.Contains(r.FileKtid)).Select(r => r.FileKtid).ToList();
         return new Report(replacements.Count, matched.Count, notFound, notes);
     }
 
     public static void Revert(GameWorkspace ws)
     {
+        // 라이브가 '우리 패치 출력'과 일치하는 파일만 백업으로 복원한다.
+        // 이미 원본(게임 업데이트로 Steam 이 순정 교체, 또는 순정 그대로)인 파일은 건드리지 않아
+        // stale 백업이 최신 원본을 다운그레이드하는 것을 막는다.
+        var rec = PatchRecord.Load(ws.PatchRecordPath);
         foreach (var db in ws.Databases)
         {
+            string liveRdb = Path.Combine(ws.PackageDir, db + ".rdb");
+            string liveRdx = Path.Combine(ws.PackageDir, db + ".rdx");
             string bakRdb = Path.Combine(ws.BackupDir, db + ".rdb");
             string bakRdx = Path.Combine(ws.BackupDir, db + ".rdx");
-            if (File.Exists(bakRdb)) File.Copy(bakRdb, Path.Combine(ws.PackageDir, db + ".rdb"), true);
-            if (File.Exists(bakRdx)) File.Copy(bakRdx, Path.Combine(ws.PackageDir, db + ".rdx"), true);
+            var di = rec?.Databases.FirstOrDefault(d => d.Db.Equals(db, StringComparison.OrdinalIgnoreCase));
+
+            bool rdbIsOurs = di is not null ? Matches(liveRdb, di.RdbSize, di.RdbHash) : RdxHasModsHash(liveRdx);
+            bool rdxIsOurs = di is not null ? Matches(liveRdx, di.RdxSize, di.RdxHash) : RdxHasModsHash(liveRdx);
+
+            if (rdbIsOurs && File.Exists(bakRdb)) File.Copy(bakRdb, liveRdb, true);
+            if (rdxIsOurs && File.Exists(bakRdx)) File.Copy(bakRdx, liveRdx, true);
         }
         foreach (var f in SafeGlob(ws.PackageDir, ModsGlob)) TryDelete(f);
         TryDelete(ws.PatchRecordPath);

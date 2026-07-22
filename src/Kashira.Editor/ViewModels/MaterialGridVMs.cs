@@ -48,7 +48,7 @@ public sealed partial class GridMaterialVM : ObservableObject
         _onShaderChanged = onShaderChanged;
         CanEditShader = m.Index >= 0;
 
-        var opts = new List<ShaderChoiceVM> { new(null, "(미지정 · g1m 원본 유지)") };  // 첫 항목 = 오버라이드 없음
+        var opts = new List<ShaderChoiceVM> { new(null, "(unset · keep g1m original)") };  // 첫 항목 = 오버라이드 없음
         if (CanEditShader && catalog is not null)
             foreach (var e in catalog.All) opts.Add(new ShaderChoiceVM(e.MatB, e.Display));
         // 직접입력/미등록 matB 도 표시(카탈로그에 없으면 unknown 항목 추가)
@@ -109,7 +109,7 @@ public sealed partial class GridCellVM : ObservableObject
         if (c.Inherited)
         {
             Glyph = "·";
-            Tooltip = "상속(base 폴백) — 배정하면 변형이 실체화됩니다";
+            Tooltip = "Inherited (base fallback) — assigning materializes this variation";
         }
         else if (c.FullPath is not null)
         {
@@ -122,12 +122,12 @@ public sealed partial class GridCellVM : ObservableObject
         {
             Missing = true;
             Glyph = "?";
-            Tooltip = $"미해결: {c.FileName} (Content 에 없음)";
+            Tooltip = $"Unresolved: {c.FileName} (not found in Content)";
         }
         else
         {
             Glyph = "＋";
-            Tooltip = "(비어 있음) — 텍스처를 배정하세요";
+            Tooltip = "(empty) — assign a texture";
         }
     }
 }

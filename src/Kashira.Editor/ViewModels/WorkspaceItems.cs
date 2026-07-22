@@ -40,18 +40,41 @@ public sealed class BrowserItemVM
             "dds" => ("texture", "Image (dds)", "DDS"),
             "tga" => ("texture", "Image (tga)", "TGA"),
             "g1m" => ("mesh", "Mesh (g1m)", "G1M"),
-            "json" when name.EndsWith(".kts.json") => ("file", "KTS (슬롯 스키마)", "KTS"),
+            "json" when name.EndsWith(".kts.json") => ("file", "KTS (slot schema)", "KTS"),
             "json" when name.EndsWith(".mtl.json") => ("file", "Material list (mtl)", "MTL"),
             "json" when name.EndsWith(".grp.json") => ("file", "Group (grp)", "GRP"),
             "json" => ("material", "Costume manifest", "COS"),
             "mtl" => ("file", "Material (mtl)", "MTL"),
             "grp" => ("file", "Group (grp)", "GRP"),
-            "kts" => ("file", "KTS (슬롯 스키마)", "KTS"),
+            "kts" => ("file", "KTS (slot schema)", "KTS"),
             _ => ("file", ext.Length == 0 ? "File" : ext,
                   ext.Length == 0 ? "FILE" : (ext.Length >= 3 ? ext[..3] : ext).ToUpperInvariant()),
         };
         if (ext == "g1t") Thumb = TexturePreview.ThumbnailFromG1t(node.FullPath, 128);
     }
+}
+
+/// <summary>Mod Info 미리보기 이미지 한 장(preview/*.png). 썸네일 + 삭제 콜백.</summary>
+public sealed partial class PreviewImageVM : ObservableObject, System.IDisposable
+{
+    public string Path { get; }
+    public string Name { get; }
+    public Bitmap? Thumb { get; }
+    public bool HasThumb => Thumb is not null;
+    private readonly System.Action<PreviewImageVM> _remove;
+
+    public PreviewImageVM(string path, System.Action<PreviewImageVM> remove)
+    {
+        Path = path;
+        Name = System.IO.Path.GetFileName(path);
+        _remove = remove;
+        // 파일이 아닌 메모리에서 디코드 → 이후 삭제/덮어쓰기 시 파일 잠김 없음.
+        try { using var ms = new MemoryStream(File.ReadAllBytes(path)); Thumb = new Bitmap(ms); }
+        catch { Thumb = null; }
+    }
+
+    [RelayCommand] private void Remove() => _remove(this);
+    public void Dispose() => Thumb?.Dispose();
 }
 
 /// <summary>Outliner "목차": 선택 에셋의 편집/열람 섹션. Material=재질 그리드, G1mSectionId=g1m 섹션 편집기.</summary>
@@ -159,8 +182,8 @@ public sealed partial class G1mMaterialVM : ObservableObject
 {
     public static readonly NMtrOption[] Known =
     {
-        new(0, "0 · 기본 오파크"), new(1, "1 · SSS 피부"), new(2, "2 · 레이어드 웻"),
-        new(4, "4 · (미확정)"), new(6, "6 · 알파 컷아웃"), new(11, "11 · coeffs"),
+        new(0, "0 · Basic opaque"), new(1, "1 · SSS skin"), new(2, "2 · Layered wet"),
+        new(4, "4 · (unconfirmed)"), new(6, "6 · Alpha cutout"), new(11, "11 · coeffs"),
     };
 
     public int Index { get; }
@@ -179,7 +202,7 @@ public sealed partial class G1mMaterialVM : ObservableObject
              + (p.FThick is { } f ? $"  fThick {f:0.##}" : "");
         var opts = new List<NMtrOption>(Known);
         if (opts.All(o => o.Value != p.NMtrID))
-            opts.Insert(0, new NMtrOption(p.NMtrID, $"{p.NMtrID} · (미확정)"));
+            opts.Insert(0, new NMtrOption(p.NMtrID, $"{p.NMtrID} · (unconfirmed)"));
         Options = opts;
         _selectedType = opts.First(o => o.Value == p.NMtrID);
     }

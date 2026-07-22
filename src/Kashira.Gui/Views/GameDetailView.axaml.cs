@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Kashira.Gui.ViewModels;
@@ -10,6 +11,13 @@ public partial class GameDetailView : UserControl
     public GameDetailView()
     {
         InitializeComponent();
+    }
+
+    /// <summary>Mods 목록에서 항목 더블클릭 → ktmod 상세(표시 전용) 창을 연다. 동작에는 영향 없음.</summary>
+    private void OnModDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: ModRowVM row } && TopLevel.GetTopLevel(this) is Window owner)
+            new KtmodDetailWindow { DataContext = row.CreateDetail() }.Show(owner);
     }
 
     private void OnHelpClick(object? sender, RoutedEventArgs e)

@@ -16,12 +16,14 @@ public static class ModApplier
         List<PatchEngine.Replacement> Replacements,
         int DebugCount,
         int KtmodCount,
-        List<string> Incompatible);
+        List<string> Incompatible,
+        int Conflicts);
 
     public static GatherResult Gather(GameWorkspace ws, GameInstall game)
     {
         var reps = new List<PatchEngine.Replacement>();
 
+        // DebugMods 는 최상위 우선순위(수동 디버그 오버라이드) — 항상 먼저.
         foreach (var e in DebugMods.List(ws.DebugModsDir))
             reps.Add(new PatchEngine.Replacement(e.FileKtid, File.ReadAllBytes(e.FullPath), e.Ext));
         int debugCount = reps.Count;
@@ -40,8 +42,17 @@ public static class ModApplier
         var authored = new List<CostumeAuthorInstaller.AuthoredCostume>();
         if (Directory.Exists(ws.ModsDir))
         {
-            foreach (var f in Directory.EnumerateFiles(ws.ModsDir, "*.ktmod").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            // 설치된 .ktmod 를 Name(확장자 제외) → 경로로 매핑.
+            var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var f in Directory.EnumerateFiles(ws.ModsDir, "*.ktmod"))
+                files[Path.GetFileNameWithoutExtension(f)] = f;
+
+            // 활성 프로필로 우선순위(상단=최우선)·활성 여부를 해석해 그 순서대로 처리.
+            var profiles = ModProfiles.Load(ws);
+            foreach (var rm in profiles.Resolve(files.Keys))
             {
+                if (!rm.Enabled) continue;
+                if (!files.TryGetValue(rm.Mod, out var f)) continue;
                 var pkg = KtmodPackage.Load(f);
                 if (pkg is null) continue;
                 if (!pkg.MatchesGame(game)) { incompatible.Add(pkg.Name); continue; }
@@ -62,6 +73,16 @@ public static class ModApplier
         if (swaps.Count > 0 || authored.Count > 0)
             reps.AddRange(CostumeInstaller.BuildReplacements(ws, swaps, authored));
 
-        return new GatherResult(reps, debugCount, ktmodCount, incompatible);
+        // 파일 충돌 해소: 같은 FileKtid 는 우선순위(먼저 등장=상위)를 유지하고 이후 중복은 제거.
+        var seen = new HashSet<uint>();
+        var deduped = new List<PatchEngine.Replacement>(reps.Count);
+        int conflicts = 0;
+        foreach (var r in reps)
+        {
+            if (seen.Add(r.FileKtid)) deduped.Add(r);
+            else conflicts++;
+        }
+
+        return new GatherResult(deduped, debugCount, ktmodCount, incompatible, conflicts);
     }
 }

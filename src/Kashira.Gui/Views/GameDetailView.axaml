@@ -30,12 +30,13 @@
                        Text="The game's RDB was updated or overwritten since you last applied mods. Click Apply to re-patch."/>
         </Border>
 
-        <!-- Tab toggle -->
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,8">
-            <Button Grid.Column="0" Content="DebugMods" Command="{Binding ShowDebugCommand}"
-                    Classes.accent="{Binding IsDebugTab}" Margin="0,0,6,0"/>
-            <Button Grid.Column="1" Content="Mods" Command="{Binding ShowModsCommand}"
+        <!-- Tab toggle — Mods is the primary view; DebugMods is a small secondary button -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,8">
+            <Button Grid.Column="0" Content="Mods" Command="{Binding ShowModsCommand}"
                     Classes.accent="{Binding IsModsTab}"/>
+            <Button Grid.Column="2" Content="DebugMods" Command="{Binding ShowDebugCommand}"
+                    Classes.accent="{Binding IsDebugTab}" FontSize="11" Padding="8,3" Margin="0,0,6,0"
+                    ToolTip.Tip="Advanced: raw 0x{ktid}.ext inject files"/>
             <Button Grid.Column="3" Content="Refresh" Command="{Binding RefreshCommand}"/>
         </Grid>
 
@@ -92,43 +93,97 @@
                                TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>
                 </Panel>
 
-                <!-- Mods (.ktmod packages) -->
+                <!-- Mods (.ktmod packages) — profile-driven priority list -->
                 <Panel IsVisible="{Binding IsModsTab}">
-                    <ListBox ItemsSource="{Binding Mods}" Background="Transparent">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:KtmodItemViewModel">
-                                <Grid ColumnDefinitions="Auto,*" Margin="4,6">
-                                    <!-- thumbnail (or placeholder) -->
-                                    <Panel Grid.Column="0" Width="72" Height="72" Margin="0,0,12,0">
-                                        <Border Background="{StaticResource KashiraBg}" CornerRadius="4"
-                                                IsVisible="{Binding !HasThumb}">
-                                            <TextBlock Text="KTMOD" Foreground="{StaticResource KashiraTextDim}"
-                                                       FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <Border CornerRadius="4" ClipToBounds="True" IsVisible="{Binding HasThumb}">
-                                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
-                                        </Border>
-                                    </Panel>
-                                    <!-- metadata -->
-                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraText}"
-                                                   FontSize="14" FontWeight="Bold"/>
-                                        <TextBlock Text="{Binding Author}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
-                                        <TextBlock Text="{Binding Description}" Foreground="{StaticResource KashiraTextDim}"
-                                                   FontSize="11" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
-                                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                            <TextBlock Text="{Binding TargetText}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
-                                            <TextBlock Text="{Binding InfoLine}" Foreground="{StaticResource KashiraAccent}" FontSize="11"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <TextBlock Text="Drop a .ktmod (uncompressed zip renamed to .ktmod) into the Mods folder, then Apply."
-                               IsVisible="{Binding ModsEmpty}"
-                               Foreground="{StaticResource KashiraTextDim}" FontSize="12"
-                               TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>
+                    <DockPanel>
+                        <!-- Profile selector bar -->
+                        <Border DockPanel.Dock="Top" Background="{StaticResource KashiraBg}" CornerRadius="5"
+                                Padding="8" Margin="4,4,4,6">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                                <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center"
+                                           Foreground="{StaticResource KashiraTextDim}"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding ProfileNames}"
+                                          SelectedItem="{Binding SelectedProfile}" HorizontalAlignment="Stretch"/>
+                                <Button Grid.Column="2" Content="New Profile">
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom">
+                                            <StackPanel Width="240" Spacing="6" Margin="2">
+                                                <TextBlock Text="New profile name" FontSize="11"
+                                                           Foreground="{StaticResource KashiraTextDim}"/>
+                                                <TextBox Text="{Binding NewProfileName}"
+                                                         Watermark="e.g. My Loadout"/>
+                                                <Button Content="Create" Classes="accent" HorizontalAlignment="Stretch"
+                                                        Command="{Binding CreateProfileCommand}"/>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <Button Grid.Column="3" Content="Delete" Command="{Binding DeleteProfileCommand}"
+                                        IsEnabled="{Binding CanEditProfile}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Profile hint -->
+                        <TextBlock DockPanel.Dock="Top" IsVisible="{Binding IsDefaultProfile}" Margin="8,0,8,6"
+                                   Foreground="{StaticResource KashiraTextDim}" FontSize="11" TextWrapping="Wrap"
+                                   Text="Default profile — all mods enabled, alphabetical, read-only. Create a profile to reorder priority or disable mods. Higher in the list wins file conflicts."/>
+                        <TextBlock DockPanel.Dock="Top" IsVisible="{Binding CanEditProfile}" Margin="8,0,8,6"
+                                   Foreground="{StaticResource KashiraTextDim}" FontSize="11" TextWrapping="Wrap"
+                                   Text="Toggle mods on/off and use ▲▼ to set priority (top = highest = wins file conflicts). Changes auto-save; the active profile is used on launch."/>
+
+                        <!-- Ordered mod list -->
+                        <Panel>
+                            <ListBox ItemsSource="{Binding ModRows}" Background="Transparent"
+                                     DoubleTapped="OnModDoubleTapped"
+                                     ToolTip.Tip="Double-click a mod to view its details and preview images">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModRowVM">
+                                        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="4,6">
+                                            <!-- enable + priority -->
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding Enabled}"
+                                                      IsEnabled="{Binding Editable}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding PriorityText}" Width="34"
+                                                       VerticalAlignment="Center" TextAlignment="Center"
+                                                       Foreground="{StaticResource KashiraAccent}" FontSize="12" FontWeight="Bold"/>
+                                            <!-- thumbnail (or placeholder) -->
+                                            <Panel Grid.Column="2" Width="64" Height="64" Margin="4,0,12,0">
+                                                <Border Background="{StaticResource KashiraBg}" CornerRadius="4"
+                                                        IsVisible="{Binding !HasThumb}">
+                                                    <TextBlock Text="KTMOD" Foreground="{StaticResource KashiraTextDim}"
+                                                               FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <Border CornerRadius="4" ClipToBounds="True" IsVisible="{Binding HasThumb}">
+                                                    <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                                </Border>
+                                            </Panel>
+                                            <!-- metadata -->
+                                            <StackPanel Grid.Column="3" Spacing="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource KashiraText}"
+                                                           FontSize="14" FontWeight="Bold"/>
+                                                <TextBlock Text="{Binding Author}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource KashiraTextDim}"
+                                                           FontSize="11" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                                                    <TextBlock Text="{Binding TargetText}" Foreground="{StaticResource KashiraTextDim}" FontSize="11"/>
+                                                    <TextBlock Text="{Binding InfoLine}" Foreground="{StaticResource KashiraAccent}" FontSize="11"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <!-- reorder -->
+                                            <StackPanel Grid.Column="4" Orientation="Vertical" Spacing="2"
+                                                        VerticalAlignment="Center" IsVisible="{Binding Editable}">
+                                                <Button Content="▲" Command="{Binding MoveUpCommand}" Padding="8,2" MinWidth="34"/>
+                                                <Button Content="▼" Command="{Binding MoveDownCommand}" Padding="8,2" MinWidth="34"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <TextBlock Text="Drop a .ktmod (uncompressed zip renamed to .ktmod) into the Mods folder, then Apply."
+                                       IsVisible="{Binding ModsEmpty}"
+                                       Foreground="{StaticResource KashiraTextDim}" FontSize="12"
+                                       TextWrapping="Wrap" Margin="10" VerticalAlignment="Top"/>
+                        </Panel>
+                    </DockPanel>
                 </Panel>
 
             </Panel>

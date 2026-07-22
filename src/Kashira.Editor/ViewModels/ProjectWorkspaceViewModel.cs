@@ -21,7 +21,7 @@ namespace Kashira.Editor.ViewModels;
 /// 로드된 프로젝트 편집 화면 — 언리얼식 셸.
 /// Content Browser(하단): 좌 폴더트리 + 우 폴더-직속 항목 그리드. 에셋 선택 → CurrentAsset.
 /// Outliner(좌): CurrentAsset 의 "목차"(섹션). Details(우): 선택 섹션의 상세. Viewport(중앙): 프리뷰/재질 그리드.
-/// 게이팅: DOA6LR = Content + Content_Legacy 동시. 비-DOA6LR = Content_Legacy 만(저작 비활성).
+/// 게이팅: Content/ 저작 파이프라인은 현재 무기한 보류 → 어느 게임이든 Content_Legacy 전용(ContentEnabled=false).
 /// </summary>
 public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
 {
@@ -38,7 +38,12 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     public string ProjectDir => _project.ProjectDir;
     public bool IsAuthoringGame { get; }
     public bool IsLegacyOnly => !IsAuthoringGame;
-    public string GameModeText => IsAuthoringGame ? "저작 모드" : "Legacy 전용";
+
+    /// <summary>Content/ 저작 파이프라인은 현재 무기한 보류(연구문서 결정).
+    /// false → Content 폴더 트리·번들 임포트 등 저작 UI 를 숨기고 Content_Legacy 전용으로 동작.</summary>
+    public bool ContentEnabled => false;
+
+    public string GameModeText => "Legacy only";
 
     // ── Content Browser ───────────────────────────────────────
     public ObservableCollection<ProjectContent.ContentNode> FolderTree { get; } = new();
@@ -49,7 +54,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     // ── Outliner (목차) ───────────────────────────────────────
     public ObservableCollection<AssetSectionVM> OutlinerSections { get; } = new();
     [ObservableProperty] private AssetSectionVM? _selectedSection;
-    [ObservableProperty] private string _currentAssetName = "(선택 없음)";
+    [ObservableProperty] private string _currentAssetName = "(none selected)";
     private string? _currentAssetPath;
 
     // ── Details ───────────────────────────────────────────────
@@ -90,7 +95,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
 
     // 그리드 셀 편집
     [ObservableProperty] private GridCellVM? _selectedCell;
-    [ObservableProperty] private string _selectedCellInfo = "셀을 클릭해 선택하세요.";
+    [ObservableProperty] private string _selectedCellInfo = "Click a cell to select it.";
 
     // ── 상태/게임 ─────────────────────────────────────────────
     [ObservableProperty] private string _status = "";
@@ -100,6 +105,13 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _newSetName = "body";
     [ObservableProperty] private string _newTargetCostume = "";
     [ObservableProperty] private string _bundleDir = "";
+
+    // ── Mod Info(작성자/썸네일/미리보기 이미지) ────────────────
+    [ObservableProperty] private string _author = "";
+    [ObservableProperty] private string _description = "";
+    [ObservableProperty] private Bitmap? _thumbnail;
+    [ObservableProperty] private bool _hasThumbnail;
+    public ObservableCollection<PreviewImageVM> PreviewImages { get; } = new();
 
     // ── File 메뉴: 최근 프로젝트 ──────────────────────────────
     public ObservableCollection<EditorProjects.Recent> Recent { get; } = new();
@@ -117,6 +129,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         _projectPicker = projectPicker;
         _openProject = openProject;
         IsAuthoringGame = GameCatalog.IsAuthoringTarget(project.TargetGame);
+        Author = project.Author;
+        Description = project.Description;
+        LoadModInfo();
         LoadRecent();
         Refresh();
         UpdateGameStatus();
@@ -133,7 +148,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     {
         var g = GameLibrary.Load().FirstOrDefault(x => GameCatalog.Matches(x, _project.TargetGame));
         GameStatus = g is null
-            ? $"게임 '{_project.TargetGame}' 미연결 — Manager 에서 추가/감지"
+            ? $"Game '{_project.TargetGame}' not linked — add/detect in the Manager"
             : $"{g.DisplayName} · {GameModeText}";
     }
 
@@ -144,7 +159,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     {
         string? keepFolder = SelectedFolder?.FullPath;
         FolderTree.Clear();
-        foreach (var root in ProjectContent.FolderRoots(_project, content: IsAuthoringGame, legacy: true))
+        foreach (var root in ProjectContent.FolderRoots(_project, content: ContentEnabled, legacy: true))
             FolderTree.Add(root);
 
         var target = keepFolder is not null ? FindNode(FolderTree, keepFolder) : null;
@@ -199,7 +214,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         PreviewImage?.Dispose();
         PreviewImage = null; HasPreview = false;
         HasGrid = false; SelectedGridMaterial = null; _gridMaterials.Clear();
-        _currentManifestPath = null; SelectedCell = null; SelectedCellInfo = "셀을 클릭해 선택하세요.";
+        _currentManifestPath = null; SelectedCell = null; SelectedCellInfo = "Click a cell to select it.";
         VariationInfo = "";
         OutlinerSections.Clear();
 
@@ -262,7 +277,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
                     if (s.Id == 0x10002)
                         det.Add(new("Materials", geo.MaterialCount.ToString()));
                     else if (s.Id == G1mMaterialProps.SectionId)
-                        det.Add(new("편집", "재질 타입(nMtrID) 편집 가능"));
+                        det.Add(new("Edit", "Material type (nMtrID) editable"));
                     else if (s.Id == 0x10004)
                         foreach (var vb in geo.VertexBuffers)
                             det.Add(new($"VB {vb.Index}", $"vsize {vb.VertexSize} · {vb.NumVerts:N0} verts · L{vb.Layout}"));
@@ -318,7 +333,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     {
         VariationInfo = _currentManifestPath is null
             ? ""
-            : $"변형 {CostumeManifestEditor.GetVariationCount(_currentManifestPath)}";
+            : $"Variations: {CostumeManifestEditor.GetVariationCount(_currentManifestPath)}";
     }
 
     [RelayCommand]
@@ -326,18 +341,18 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     {
         if (_currentManifestPath is null) return;
         int keep = SelectedGridMaterial?.MaterialIndex ?? int.MinValue;
-        try { CostumeManifestEditor.AddVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "변형 추가됨(새 열은 상속 ·)"; }
-        catch (Exception ex) { Status = $"변형 추가 실패: {ex.Message}"; }
+        try { CostumeManifestEditor.AddVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "Variation added (new column inherits ·)"; }
+        catch (Exception ex) { Status = $"Add variation failed: {ex.Message}"; }
     }
 
     [RelayCommand]
     private void RemoveVariation()
     {
         if (_currentManifestPath is null) return;
-        if (CostumeManifestEditor.GetVariationCount(_currentManifestPath) <= 1) { Status = "변형이 1개라 더 줄일 수 없습니다."; return; }
+        if (CostumeManifestEditor.GetVariationCount(_currentManifestPath) <= 1) { Status = "Only one variation left — cannot reduce further."; return; }
         int keep = SelectedGridMaterial?.MaterialIndex ?? int.MinValue;
-        try { CostumeManifestEditor.RemoveVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "마지막 변형 삭제됨"; }
-        catch (Exception ex) { Status = $"변형 삭제 실패: {ex.Message}"; }
+        try { CostumeManifestEditor.RemoveVariation(_currentManifestPath); RebuildManifestKeeping(keep); Status = "Last variation removed"; }
+        catch (Exception ex) { Status = $"Remove variation failed: {ex.Message}"; }
     }
 
     private void RebuildManifestKeeping(int materialIndex)
@@ -356,7 +371,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             new("Variations", gm.ColumnHeaders.Count.ToString()),
             new("Categories", gm.Rows.Count.ToString()),
         };
-        if (gm.MissingAlbedo) l.Add(new("경고", "⚠ albedo 누락"));
+        if (gm.MissingAlbedo) l.Add(new("Warning", "⚠ albedo missing"));
         return l;
     }
 
@@ -418,13 +433,13 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         try
         {
             var c = G1mContainer.Parse(File.ReadAllBytes(g1m));
-            if (ResolveSection(c) is not { } r) { Status = "이 섹션은 raw 내보내기 대상이 아닙니다."; return; }
+            if (ResolveSection(c) is not { } r) { Status = "This section is not eligible for raw export."; return; }
             string outPath = Path.Combine(Path.GetDirectoryName(g1m)!, $"{Path.GetFileName(g1m)}.{r.key}.bin");
             File.WriteAllBytes(outPath, r.inner);
-            Status = $"섹션 내보냄: {Path.GetFileName(outPath)} ({r.inner.Length} B)";
+            Status = $"Section exported: {Path.GetFileName(outPath)} ({r.inner.Length} B)";
             Refresh();
         }
-        catch (Exception ex) { Status = $"섹션 내보내기 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Section export failed: {ex.Message}"; }
     }
 
     /// <summary>.bin 을 선택해 현재 섹션의 raw 바이트를 교체(같은 크기=안전, 다르면 경고).</summary>
@@ -432,8 +447,8 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     private async Task ImportG1mSection()
     {
         if (_currentAssetPath is not { } g1m || !HasG1mSection) return;
-        if (_filePicker is null) { Status = "파일 선택기를 사용할 수 없습니다."; return; }
-        var f = await _filePicker("섹션 .bin 선택", "bin");
+        if (_filePicker is null) { Status = "File picker is unavailable."; return; }
+        var f = await _filePicker("Select section .bin", "bin");
         if (string.IsNullOrEmpty(f)) return;
         try
         {
@@ -443,22 +458,22 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             if (_selG1mSectionId is uint id)
             {
                 var s = c.FindSection(id);
-                if (s is null) { Status = "섹션을 찾을 수 없음"; return; }
+                if (s is null) { Status = "Section not found"; return; }
                 oldLen = s.Inner.Length; s.Inner = newInner;
             }
             else if (_selG1mChunkIndex is int ci && ci >= 0 && ci < c.Chunks.Count && !c.Chunks[ci].IsG1mg)
             {
                 oldLen = c.Chunks[ci].Inner.Length; c.Chunks[ci].Inner = newInner;
             }
-            else { Status = "이 섹션은 raw 가져오기 대상이 아닙니다."; return; }
+            else { Status = "This section is not eligible for raw import."; return; }
 
             File.WriteAllBytes(g1m, c.Build());
             string warn = newInner.Length != oldLen
-                ? " ⚠ 크기 변경 — G1MF/참조 미갱신, 크래시 가능(백업 권장)" : "";
-            Status = $"섹션 임포트됨: {Path.GetFileName(f)} ({oldLen}→{newInner.Length} B){warn}";
+                ? " ⚠ Size changed — G1MF/references not updated, may crash (backup recommended)" : "";
+            Status = $"Section imported: {Path.GetFileName(f)} ({oldLen}→{newInner.Length} B){warn}";
             ReselectG1mSectionAfterEdit();
         }
-        catch (Exception ex) { Status = $"섹션 임포트 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Section import failed: {ex.Message}"; }
     }
 
     private void ReselectG1mSectionAfterEdit()
@@ -512,9 +527,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         try
         {
             CostumeManifestEditor.SetMaterialShader(_currentManifestPath, materialIndex, matB);
-            Status = $"셰이더 지정: Material {materialIndex} → {(matB is { } v ? $"0x{v:x8}" : "미지정")}";
+            Status = $"Shader set: Material {materialIndex} → {(matB is { } v ? $"0x{v:x8}" : "unset")}";
         }
-        catch (Exception ex) { Status = $"셰이더 저장 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Save shader failed: {ex.Message}"; }
     }
 
     /// <summary>메시 슬롯(재질 인덱스) 클릭 → 이 g1m 을 참조하는 코스튬 매니페스트의 그 재질 텍스처 그리드로 이동.</summary>
@@ -525,7 +540,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         var manifest = FindManifestForG1m(_meshG1mPath);
         if (manifest is null)
         {
-            Status = $"@{g1mName} 을(를) 참조하는 코스튬 매니페스트(.json)를 Content/ 에서 찾지 못했습니다.";
+            Status = $"No costume manifest (.json) referencing @{g1mName} was found in Content/.";
             return;
         }
         SetCurrentAsset(manifest);
@@ -533,12 +548,12 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
         if (section is not null)
         {
             SelectedSection = section;
-            Status = $"텍스처 그리드: {Path.GetFileName(manifest)} · Material {materialIndex}";
+            Status = $"Texture grid: {Path.GetFileName(manifest)} · Material {materialIndex}";
         }
         else
         {
             SelectedSection = OutlinerSections.FirstOrDefault(s => s.Material is not null);
-            Status = $"{Path.GetFileName(manifest)} 에 Material {materialIndex} 슬롯이 없습니다(매니페스트 재질 수를 확인하세요).";
+            Status = $"{Path.GetFileName(manifest)} has no Material {materialIndex} slot (check the manifest's material count).";
         }
     }
 
@@ -619,17 +634,17 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             foreach (var mv in G1mMaterials)
                 if (G1mMaterialProps.SetNMtrID(c, mv.Index, mv.SelectedValue)) changed++;
             File.WriteAllBytes(_currentAssetPath, c.Build());
-            Status = $"재질 타입 적용됨 ({changed}개) — {Path.GetFileName(_currentAssetPath)}";
+            Status = $"Material types applied ({changed}) — {Path.GetFileName(_currentAssetPath)}";
             G1mMaterials.Clear();
             BuildG1mPropsEditor();
         }
-        catch (Exception ex) { Status = $"재질 타입 적용 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Apply material types failed: {ex.Message}"; }
     }
 
     private void ClearCurrentAsset()
     {
         _currentAssetPath = null; _currentManifestPath = null;
-        CurrentAssetName = "(선택 없음)";
+        CurrentAssetName = "(none selected)";
         OutlinerSections.Clear(); SelectedSection = null;
         Details.Clear(); HasDetails = false;
         PreviewImage?.Dispose(); PreviewImage = null; HasPreview = false;
@@ -642,7 +657,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     {
         if (SelectedCell is not null) SelectedCell.IsSelected = false;
         SelectedCell = cell;
-        if (cell is null) { SelectedCellInfo = "셀을 클릭해 선택하세요."; return; }
+        if (cell is null) { SelectedCellInfo = "Click a cell to select it."; return; }
         cell.IsSelected = true;
         string mat = cell.MaterialIndex < 0 ? "Base" : $"Material {cell.MaterialIndex}";
         string col = cell.MaterialIndex < 0 ? "base" : $"var{cell.Column}";
@@ -652,9 +667,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void AssignSelectedCell()
     {
-        if (_currentManifestPath is null || SelectedCell is null) { Status = "먼저 그리드 셀을 선택하세요."; return; }
+        if (_currentManifestPath is null || SelectedCell is null) { Status = "Select a grid cell first."; return; }
         if (SelectedBrowserItem is null || !SelectedBrowserItem.FullPath.EndsWith(".g1t", StringComparison.OrdinalIgnoreCase))
-        { Status = "Content 브라우저에서 배정할 g1t 를 먼저 선택하세요."; return; }
+        { Status = "Select a g1t to assign in the Content browser first."; return; }
         var cell = SelectedCell;
         string atRef = "@" + Path.GetFileName(SelectedBrowserItem.FullPath);
         try
@@ -664,17 +679,17 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             else
                 CostumeManifestEditor.SetMaterialSlot(_currentManifestPath, cell.MaterialIndex, cell.Column, cell.Category, atRef);
             RebuildAfterEdit(cell);
-            Status = $"배정: {cell.Role} ← {Path.GetFileName(SelectedBrowserItem.FullPath)}";
+            Status = $"Assigned: {cell.Role} ← {Path.GetFileName(SelectedBrowserItem.FullPath)}";
         }
-        catch (Exception ex) { Status = $"배정 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Assign failed: {ex.Message}"; }
     }
 
     [RelayCommand]
     private void ClearSelectedCell()
     {
-        if (_currentManifestPath is null || SelectedCell is null) { Status = "먼저 그리드 셀을 선택하세요."; return; }
+        if (_currentManifestPath is null || SelectedCell is null) { Status = "Select a grid cell first."; return; }
         var cell = SelectedCell;
-        if (cell.Inherited) { Status = "상속 셀은 지울 것이 없습니다."; return; }
+        if (cell.Inherited) { Status = "Inherited cell — nothing to clear."; return; }
         try
         {
             if (cell.MaterialIndex < 0)
@@ -682,9 +697,9 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             else
                 CostumeManifestEditor.SetMaterialSlot(_currentManifestPath, cell.MaterialIndex, cell.Column, cell.Category, null);
             RebuildAfterEdit(cell);
-            Status = $"지움: {cell.Role}";
+            Status = $"Cleared: {cell.Role}";
         }
-        catch (Exception ex) { Status = $"지우기 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Clear failed: {ex.Message}"; }
     }
 
     private void RebuildAfterEdit(GridCellVM edited)
@@ -708,33 +723,33 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     private void ExportDds()
     {
         if (SelectedG1tPath is not { } p) return;
-        try { Status = $"DDS 내보냄: {Path.GetFileName(TextureIo.ExportDds(p))}"; Refresh(); }
-        catch (Exception ex) { Status = $"DDS 내보내기 실패: {ex.Message}"; }
+        try { Status = $"DDS exported: {Path.GetFileName(TextureIo.ExportDds(p))}"; Refresh(); }
+        catch (Exception ex) { Status = $"DDS export failed: {ex.Message}"; }
     }
 
     [RelayCommand]
     private void ExportTga()
     {
         if (SelectedG1tPath is not { } p) return;
-        try { Status = $"TGA 내보냄: {Path.GetFileName(TextureIo.ExportTga(p))}"; Refresh(); }
-        catch (Exception ex) { Status = $"TGA 내보내기 실패: {ex.Message}"; }
+        try { Status = $"TGA exported: {Path.GetFileName(TextureIo.ExportTga(p))}"; Refresh(); }
+        catch (Exception ex) { Status = $"TGA export failed: {ex.Message}"; }
     }
 
     [RelayCommand]
     private async Task ReplaceTexture()
     {
         if (SelectedG1tPath is not { } p) return;
-        if (_filePicker is null) { Status = "파일 선택기를 사용할 수 없습니다."; return; }
-        var img = await _filePicker("교체할 텍스처 선택 (dds/tga)", "dds,tga");
+        if (_filePicker is null) { Status = "File picker is unavailable."; return; }
+        var img = await _filePicker("Select replacement texture (dds/tga)", "dds,tga");
         if (string.IsNullOrEmpty(img)) return;
         try
         {
             TextureIo.ReplaceFromFile(p, img);
             TexturePreview.ClearCache();
             SetCurrentAsset(p);
-            Status = $"교체 완료: {Path.GetFileName(p)} ← {Path.GetFileName(img)}";
+            Status = $"Replaced: {Path.GetFileName(p)} ← {Path.GetFileName(img)}";
         }
-        catch (Exception ex) { Status = $"교체 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Replace failed: {ex.Message}"; }
     }
 
     // ── Import Kissaki bundle ─────────────────────────────────
@@ -743,24 +758,24 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task ImportBundle()
     {
-        if (!IsAuthoringGame) { Status = "이 게임은 저작을 지원하지 않습니다(Content_Legacy 전용)."; return; }
-        if (string.IsNullOrWhiteSpace(NewSetName)) { Status = "세트 이름을 입력하세요."; return; }
+        if (!IsAuthoringGame) { Status = "This game does not support authoring (Content_Legacy only)."; return; }
+        if (string.IsNullOrWhiteSpace(NewSetName)) { Status = "Enter a set name."; return; }
         var game = GameLibrary.Load().FirstOrDefault(g => GameCatalog.Matches(g, _project.TargetGame));
-        if (game is null) { Status = $"게임 '{_project.TargetGame}' 미연결 — Manager 에서 설정/감지하세요."; return; }
-        if (_folderPicker is null) { Status = "폴더 선택기를 사용할 수 없습니다."; return; }
+        if (game is null) { Status = $"Game '{_project.TargetGame}' not linked — set up/detect in the Manager."; return; }
+        if (_folderPicker is null) { Status = "Folder picker is unavailable."; return; }
 
         var dir = await _folderPicker();
         if (string.IsNullOrEmpty(dir)) return;                       // 취소
-        if (!Directory.Exists(dir)) { Status = "폴더가 존재하지 않습니다."; return; }
+        if (!Directory.Exists(dir)) { Status = "Folder does not exist."; return; }
         BundleDir = dir;
         try
         {
             var r = BundleImporter.Import(new GameWorkspace(game), _project, NewSetName.Trim(), dir, NewTargetCostume.Trim());
-            Status = $"임포트 완료: 소스 {r.SourceCostume} → 재질 {r.Materials} · 변형 {r.Variations} · 텍스처 {r.Textures} · 셰이더 {r.Shaders}"
-                     + (r.MissingG1t > 0 ? $" (미매칭 g1t {r.MissingG1t})" : "");
+            Status = $"Import complete: source {r.SourceCostume} → materials {r.Materials} · variations {r.Variations} · textures {r.Textures} · shaders {r.Shaders}"
+                     + (r.MissingG1t > 0 ? $" (unmatched g1t {r.MissingG1t})" : "");
             Refresh();
         }
-        catch (Exception ex) { Status = $"임포트 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Import failed: {ex.Message}"; }
     }
 
     // ── 빌드/폴더/파일메뉴 ────────────────────────────────────
@@ -770,7 +785,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
     private async Task Build()
     {
         var game = GameLibrary.Load().FirstOrDefault(g => GameCatalog.Matches(g, _project.TargetGame));
-        Status = "빌드 중…";
+        Status = "Building…";
         try
         {
             string output = await Task.Run(() =>
@@ -784,20 +799,13 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
                 string local = Path.Combine(Path.GetDirectoryName(_project.ProjectDir)!, _project.Name + ".ktmod");
                 _project.Build(local); return local;
             });
-            Status = game is not null ? $"빌드 완료 → 게임 Mods: {output}" : $"빌드 완료(게임 미연결 — 로컬): {output}";
+            Status = game is not null ? $"Build complete → game Mods: {output}" : $"Build complete (game not linked — local): {output}";
         }
-        catch (Exception ex) { Status = $"빌드 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Build failed: {ex.Message}"; }
     }
 
     [RelayCommand]
     private void OpenProjectFolder() => OpenInExplorer(_project.ProjectDir);
-
-    [RelayCommand]
-    private void OpenLegacyFolder()
-    {
-        Directory.CreateDirectory(_project.ContentLegacyDir);
-        OpenInExplorer(_project.ContentLegacyDir);
-    }
 
     [RelayCommand]
     private void BackToLauncher() { Dispose(); _back(); }
@@ -814,7 +822,7 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             EditorProjects.Touch(project, DateTime.UtcNow.ToString("o"));
             Dispose(); _openProject(project);
         }
-        catch (Exception ex) { Status = $"열기 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Open failed: {ex.Message}"; }
     }
 
     [RelayCommand]
@@ -827,14 +835,130 @@ public partial class ProjectWorkspaceViewModel : ViewModelBase, IDisposable
             EditorProjects.Touch(project, DateTime.UtcNow.ToString("o"));
             Dispose(); _openProject(project);
         }
-        catch (Exception ex) { Status = $"열기 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Open failed: {ex.Message}"; }
     }
 
     private void OpenInExplorer(string path)
     {
         try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
-        catch (Exception ex) { Status = $"폴더 열기 실패: {ex.Message}"; }
+        catch (Exception ex) { Status = $"Open folder failed: {ex.Message}"; }
     }
 
-    public void Dispose() => _watcher.Dispose();
+    // ── Mod Info(작성자/썸네일/미리보기 이미지) ────────────────
+
+    /// <summary>디스크(thumb.png · preview/*.png)에서 썸네일·미리보기 이미지를 다시 읽는다.
+    /// Bitmap 은 파일이 아닌 메모리에서 디코드 → 이후 덮어쓰기/삭제 시 파일 잠김 없음.</summary>
+    private void LoadModInfo()
+    {
+        Thumbnail?.Dispose();
+        Thumbnail = null; HasThumbnail = false;
+        string thumb = Path.Combine(_project.ProjectDir, "thumb.png");
+        if (File.Exists(thumb)) { Thumbnail = LoadBitmap(thumb); HasThumbnail = Thumbnail is not null; }
+
+        foreach (var img in PreviewImages) img.Dispose();
+        PreviewImages.Clear();
+        string previewDir = Path.Combine(_project.ProjectDir, "preview");
+        if (Directory.Exists(previewDir))
+            foreach (var png in Directory.EnumerateFiles(previewDir, "*.png").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                PreviewImages.Add(new PreviewImageVM(png, RemovePreviewImage));
+    }
+
+    private static Bitmap? LoadBitmap(string path)
+    {
+        try { using var ms = new MemoryStream(File.ReadAllBytes(path)); return new Bitmap(ms); }
+        catch { return null; }
+    }
+
+    /// <summary>작성자/설명을 project.ktproj 에 저장(ModifiedUtc 갱신).</summary>
+    [RelayCommand]
+    private void SaveModInfo()
+    {
+        try
+        {
+            _project.Author = Author?.Trim() ?? "";
+            _project.Description = Description?.Trim() ?? "";
+            _project.ModifiedUtc = DateTime.UtcNow.ToString("o");
+            _project.Save();
+            Status = "Mod info saved";
+        }
+        catch (Exception ex) { Status = $"Save mod info failed: {ex.Message}"; }
+    }
+
+    /// <summary>이미지를 골라 thumb.png 로 복사(대표 썸네일).</summary>
+    [RelayCommand]
+    private async Task SetThumbnail()
+    {
+        if (_filePicker is null) { Status = "File picker is unavailable."; return; }
+        var img = await _filePicker("Select thumbnail image (png)", "png");
+        if (string.IsNullOrEmpty(img)) return;
+        try
+        {
+            Thumbnail?.Dispose(); Thumbnail = null; HasThumbnail = false; // 핸들 해제 후 덮어쓰기
+            string dest = Path.Combine(_project.ProjectDir, "thumb.png");
+            File.Copy(img, dest, overwrite: true);
+            Thumbnail = LoadBitmap(dest); HasThumbnail = Thumbnail is not null;
+            Status = $"Thumbnail set: {Path.GetFileName(img)}";
+        }
+        catch (Exception ex) { Status = $"Set thumbnail failed: {ex.Message}"; }
+    }
+
+    [RelayCommand]
+    private void ClearThumbnail()
+    {
+        try
+        {
+            Thumbnail?.Dispose(); Thumbnail = null; HasThumbnail = false;
+            string dest = Path.Combine(_project.ProjectDir, "thumb.png");
+            if (File.Exists(dest)) File.Delete(dest);
+            Status = "Thumbnail removed";
+        }
+        catch (Exception ex) { Status = $"Remove thumbnail failed: {ex.Message}"; }
+    }
+
+    /// <summary>이미지를 골라 preview/ 에 복사(미리보기 갤러리). 동일 이름은 _N 로 회피.</summary>
+    [RelayCommand]
+    private async Task AddImage()
+    {
+        if (_filePicker is null) { Status = "File picker is unavailable."; return; }
+        var img = await _filePicker("Add preview image (png)", "png");
+        if (string.IsNullOrEmpty(img)) return;
+        try
+        {
+            string previewDir = Path.Combine(_project.ProjectDir, "preview");
+            Directory.CreateDirectory(previewDir);
+            string dest = UniquePath(previewDir, Path.GetFileName(img));
+            File.Copy(img, dest);
+            LoadModInfo();
+            Status = $"Image added: {Path.GetFileName(dest)}";
+        }
+        catch (Exception ex) { Status = $"Add image failed: {ex.Message}"; }
+    }
+
+    private void RemovePreviewImage(PreviewImageVM img)
+    {
+        try
+        {
+            img.Dispose();
+            if (File.Exists(img.Path)) File.Delete(img.Path);
+            LoadModInfo();
+            Status = $"Image deleted: {img.Name}";
+        }
+        catch (Exception ex) { Status = $"Delete image failed: {ex.Message}"; }
+    }
+
+    private static string UniquePath(string dir, string fileName)
+    {
+        string stem = Path.GetFileNameWithoutExtension(fileName);
+        string ext = Path.GetExtension(fileName);
+        string p = Path.Combine(dir, fileName);
+        for (int i = 1; File.Exists(p); i++) p = Path.Combine(dir, $"{stem}_{i}{ext}");
+        return p;
+    }
+
+    public void Dispose()
+    {
+        _watcher.Dispose();
+        Thumbnail?.Dispose();
+        foreach (var img in PreviewImages) img.Dispose();
+    }
 }

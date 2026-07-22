@@ -68,7 +68,7 @@ public partial class ProjectLauncherViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(NewName)) { Status = "Enter a project name."; return; }
         if (string.IsNullOrWhiteSpace(NewLocation)) { Status = "Choose a location."; return; }
-        if (SelectedGame is null) { Status = "타겟 게임을 선택하세요 (Manager 에서 게임을 추가/감지하세요)."; return; }
+        if (SelectedGame is null) { Status = "Select a target game (add or detect games in the Manager)."; return; }
         try
         {
             System.IO.Directory.CreateDirectory(NewLocation);
